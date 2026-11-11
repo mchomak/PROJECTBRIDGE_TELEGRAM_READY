@@ -169,61 +169,57 @@ contents into a Codex prompt.
 Do not spawn nested agents unless the project owner explicitly asks.
 
 <!-- autopilot:start -->
+# ProjectBridge: Stages 01 and 02: Local Runtime and Accounts
 
-# ProjectBridge: Stage 01: Application Skeleton and Local Runtime
+ProjectBridge is a React/Vite frontend and Django/DRF ASGI modular monolith, with PostgreSQL as source of truth, pgvector, Redis for Celery and Channels, and Docker Compose. Runtime pins: Python 3.13.18 / Django 5.2.19; Node 24.22.2 / React 19.3.1 / Vite 8.3.7; PostgreSQL 17 with pgvector 0.8.7; Redis 7.4.12; Channels 4.3.2; Celery 5.7.0. The current product slice is accounts/auth only; do not add memberships, invitations, password reset, MFA, SSO, or account deletion.
 
-ProjectBridge is a collaborative project workspace. Stage 01 provides a local React/Vite frontend, Django/DRF ASGI backend, PostgreSQL with pgvector, Redis, and a Celery worker. It intentionally contains no account flows, product workflows, business models, or AI integrations.
+## Runtime and entry points
 
-## Architecture and entry points
+- `docker-compose.yml` runs `frontend`, `backend`, `db`, `redis`, and `celery-worker`. PostgreSQL data and uploaded media use named volumes; `docker compose down` preserves them, so do not add `-v`. The backend listens inside Compose on port 8000; direct host requests use `BACKEND_HOST_PORT`. Redis and PostgreSQL are Compose-network services. Celery Beat is absent.
+- Backend settings are in `backend/config/settings/`. `backend/config/urls.py` registers readiness at `/api/v1/health/`, authentication under `/api/v1/auth/`, and development-only schema/docs at `/api/schema/` and `/api/docs/`. Readiness in `backend/apps/health/checks.py` checks PostgreSQL and Redis.
+- `backend/config/asgi.py` routes HTTP and WebSocket traffic. The Channels probe `/ws/v1/health/` is registered in `backend/apps/health/routing.py` and handled in `backend/apps/health/consumers.py`. `backend/config/celery_app.py` configures the worker. `backend/apps/common/migrations/0001_enable_pgvector.py` enables pgvector; `backend/apps/common/tasks.py` owns the retry-safe `runtime_probe` task.
+- PostgreSQL is the source of truth; Redis backs Celery and the Channels layer. Compose publishes Vite on loopback port 5173 and Django through `BACKEND_HOST_PORT`.
+- Frontend FSD dependency flow is `app -> pages -> widgets -> features -> entities -> shared`. `frontend/src/app/App.tsx` owns startup/routes; auth routes are composed in `frontend/src/pages/auth/`; actions are in `frontend/src/features/auth/model/authActions.ts`; current-user state is in `frontend/src/entities/user/model/currentUser.ts`; `frontend/src/shared/api/index.ts` owns same-origin requests and CSRF. `frontend/scripts/generate-api-types.mjs` generates `frontend/src/shared/api/generated/schema.d.ts` from OpenAPI; do not edit generated types by hand.
 
-- The backend is a Django modular monolith. `backend/config/settings/` separates base, local, test, and production settings; `backend/config/urls.py` registers HTTP routes; `backend/config/asgi.py` composes HTTP and WebSocket routing; `backend/config/celery_app.py` configures Celery.
-- `backend/apps/health/` owns readiness and the `/ws/v1/health/` probe. `backend/apps/common/` owns the pgvector migration and the retry-safe `runtime_probe` task. The only migration enables pgvector; domain app packages are empty shells.
-- PostgreSQL is the source of truth. Redis backs Celery and Channels. Django serves `/api/v1/health/`, `/api/schema/`, and development `/api/docs/`; the Channels probe is `/ws/v1/health/`.
-- The frontend follows FSD dependency direction: `app -> pages -> widgets -> features -> entities -> shared`. App startup/routes are in `frontend/src/app/`; the request boundary is `frontend/src/shared/api/`; `frontend/scripts/generate-api-types.mjs` generates OpenAPI declarations. Do not hand-edit generated API types.
-- `docker-compose.yml` defines `frontend`, `backend`, `db`, `redis`, and `celery-worker`. Container definitions are in `infra/docker/`. PostgreSQL and uploaded media use named volumes. Vite's host port is loopback-bound at `127.0.0.1:5173`; Django's container port 8000 is published at `BACKEND_HOST_PORT`.
-- Runtime pins include Python 3.13.18 / Django 5.2.19, Node 24.22.2 / Vite 8.3.7, PostgreSQL 17 with pgvector, and Redis 7.4.12. Dependency pins and lock files are committed. Celery Beat is absent because no scheduled task is in scope.
+## Accounts, sessions, and verification
 
-## Local workflow
+- `backend/apps/accounts/models.py` owns `accounts.User` and verification-token records; `backend/apps/accounts/services.py` owns email normalization, registration, authentication, resend, and confirmation. `backend/apps/accounts/api/urls.py` exposes `GET /api/v1/auth/csrf/`, `POST /api/v1/auth/register/`, `POST /api/v1/auth/login/`, `POST /api/v1/auth/logout/`, `POST /api/v1/auth/email-verification/resend/`, `POST /api/v1/auth/email-verification/confirm/`, and `GET /api/v1/auth/me/`. API views orchestrate requests and sessions; business transitions remain in services. `backend/apps/common/api/errors.py` provides the shared error envelope with `code`, `detail`, `errors`, and `request_id`.
+- Browser auth uses Django's HttpOnly session cookie and CSRF on all state-changing requests, including registration/login. The shared client obtains the token from the CSRF cookie or `GET /api/v1/auth/csrf/`, then sends `X-CSRFToken`. Do not store session credentials in browser storage.
+- Login may create a session before email verification. `/app` loads `/api/v1/auth/me/`; a `401` redirects to `/login`, unverified users go to `/verification-required`, and network/server errors stay retryable. Verification tokens are stored as hashes; registration/resend sends the email after commit and resend responses do not disclose account existence. The local email backend is Django's console backend; check `docker compose logs -f backend`. The verification link token is in the URL fragment, which `frontend/src/pages/auth/ui/VerifyEmailPage.tsx` removes before submitting it.
+- `backend/apps/accounts/migrations/0001_initial.py` adds the custom user model. Preserve existing migrations, the `auth_user` table, and local data; do not reset the database or Compose volumes.
 
-See [docs/operations/LOCAL_DEVELOPMENT.md](docs/operations/LOCAL_DEVELOPMENT.md) for the full PowerShell and POSIX commands, runtime probes, and persistence check. From the repository root, copy `.env.example` only when `.env` does not already exist: PowerShell `if (-not (Test-Path .env)) { Copy-Item .env.example .env }`; POSIX `test -f .env || cp .env.example .env`. Then run:
+## Local workflow and environment
 
-```sh
+See [docs/operations/LOCAL_DEVELOPMENT.md](docs/operations/LOCAL_DEVELOPMENT.md). From the repository root, copy `.env.example` only if `.env` is absent, then start, migrate, inspect, and stop:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build -d
-docker compose ps
-docker compose logs -f
 docker compose exec backend python manage.py migrate
+docker compose ps
 docker compose down
 ```
 
-`docker compose down` preserves volumes; never add `-v` during ordinary stop or persistence checks. Backend HTTP is on host port 8000 by default. This workspace has another service on 8000, so its ignored local `.env` uses 8001; check the configured `BACKEND_HOST_PORT` before making direct backend requests. The clean-host default remains 8000.
+`.env.example` variable names: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_BASE_URL`, `BACKEND_HOST_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `REDIS_PASSWORD`. Compose wiring also uses `DJANGO_SETTINGS_MODULE`, `DB_HOST`, `DB_PORT`, `REDIS_URL`, `API_PROXY_TARGET`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. `FRONTEND_BASE_URL` is required in production. Keep `.env` local and never copy secret values into docs or commits.
+
+Backend source is baked into the image without a source bind mount. After backend edits, rebuild/recreate it with `docker compose up --build -d backend` before checking live settings or migrations. Ordinary `docker compose down` preserves named volumes; never use `-v` for routine stops.
 
 ## Verified checks
 
-Run from the repository root with the pinned Compose images:
+Run from the repository root with the Compose images:
 
 ```sh
 docker compose run --rm --no-deps backend ruff format --check .
 docker compose run --rm --no-deps backend ruff check .
+docker compose run --rm --no-deps backend python manage.py makemigrations --check --dry-run
 docker compose run --rm --no-deps -e DJANGO_SETTINGS_MODULE=config.settings.test backend python -m pytest -q
 docker compose exec frontend npm run format:check
 docker compose exec frontend npm run lint
 docker compose exec frontend npm run typecheck
 docker compose exec frontend npm test
 docker compose exec frontend npm run build
-```
-
-The verified full suites passed: backend 13 tests, frontend 4 tests; formatting, lint, type-check, and production build passed. Compose builds install pinned dependencies from `backend/requirements.txt` and `frontend/package-lock.json` during `docker compose up --build -d`. Generate frontend types from the live backend schema with:
-
-```sh
 docker compose exec -e API_SCHEMA_URL=http://backend:8000/api/schema/ frontend npm run api:types
 ```
 
-Backend health from PowerShell: `$backendHostPort = (Select-String -Path .env -Pattern '^BACKEND_HOST_PORT=').Line.Split('=')[1]`; then `Invoke-RestMethod "http://localhost:$backendHostPort/api/v1/health/"`. POSIX: `BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' .env | tr -d '\r')"`; then `curl --fail --show-error "http://localhost:${BACKEND_HOST_PORT}/api/v1/health/"`.
-
-Use the runtime section of the operations guide for HTTP/schema/docs checks, the real Celery task command, pgvector query, Vite WebSocket probe, and the persistence restart procedure. Verified outcomes: health/schema/docs and Vite HTTP proxy returned 200; Celery returned `{'status':'ok'}`; PostgreSQL reported `vector`; WebSocket returned `{'status':'ok'}` and closed with code 1000; live type generation produced a 4,221-byte declaration; database and media markers survived an ordinary restart.
-
-## Environment and gotchas
-
-`.env.example` declares `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `BACKEND_HOST_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `REDIS_PASSWORD`. Compose also sets `DJANGO_SETTINGS_MODULE`, `DB_HOST`, `DB_PORT`, `REDIS_URL`, `API_PROXY_TARGET`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` for service wiring. Keep `.env` local and never copy secret values into docs or commits. Local email uses Django's console backend; inspect `docker compose logs -f backend`. For pytest, explicitly set `DJANGO_SETTINGS_MODULE=config.settings.test`. The POSIX port extraction in the operations guide removes carriage returns because a Windows-created `.env` may use CRLF.
-
+Verified results: backend suite 51 passed; frontend suite 19 passed; Ruff formatting/lint, migration check, frontend format/lint/typecheck/build, and live API type generation passed. Runtime probes returned HTTP 200 for health/schema/docs and the Vite health proxy; PostgreSQL reported `vector`, Celery `runtime_probe` returned `{'status': 'ok'}`, the WebSocket probe returned `{'status': 'ok'}` and closed with code 1000, and DB/media markers survived an ordinary restart.
 <!-- autopilot:end -->
