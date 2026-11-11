@@ -1,124 +1,212 @@
 # Local Development and Operations
 
-**Status:** Local runtime baseline  
+**Status:** Stage 01 local runtime
+
 **Last updated:** 2026-11-11
 
-## 1. Goal
+## Scope and pinned runtime
 
-The MVP must run locally with persistent database storage and working
-backend, frontend, chat, document processing, and AI integration
-boundaries.
+Docker Compose runs the Stage 01 skeleton locally. It adds no product
+workflow or business model. Email uses Django's console backend; follow
+`docker compose logs -f backend` to see locally generated messages.
 
-Docker Compose is the standard local orchestration mechanism.
+| Service | Image or runtime | Local access |
+|:--|:--|:--|
+| `frontend` | `node:24.22.2-alpine3.23` | `http://localhost:5173` |
+| `backend` | `python:3.13.18-slim-bookworm` | `http://localhost:8000` |
+| `db` | `pgvector/pgvector:0.8.7-pg17-bookworm` | Compose network only |
+| `redis` | `redis:7.4.12-alpine3.21` | Compose network only |
+| `celery-worker` | `python:3.13.18-slim-bookworm` | Compose network only |
 
-## 2. Compose services
+Host ports 5173 and 8000 must be available before startup. The backend
+host port defaults to 8000 and can be changed with `BACKEND_HOST_PORT`
+in `.env`; use the configured port for direct backend URLs below. This
+workspace uses 8001 because another local service already occupies 8000.
 
-The baseline local environment contains:
+PostgreSQL data and uploaded media use the named volumes
+`projectbridge_postgres_data` and `projectbridge_media`. PostgreSQL and
+Redis ports are not published to the host. The example database and
+Redis passwords, and Django local key, are development placeholders;
+never use them in a deployed environment or commit a real `.env` file.
 
-| Service         | Purpose                                      |
-|:----------------|:---------------------------------------------|
-| `frontend`      | Vite development server                      |
-| `backend`       | Django ASGI application, REST API, WebSocket |
-| `postgres`      | PostgreSQL with pgvector extension           |
-| `redis`         | Celery broker and Channels layer             |
-| `celery-worker` | Background document and AI tasks             |
-| `celery-beat`   | Scheduled jobs when required                 |
-| file volume     | Persistent local document storage            |
+Celery Beat is deliberately absent because Stage 01 has no scheduled
+task. Add a scheduler only when a real scheduled task enters scope.
 
-The exact container images, versions, ports, and commands must be pinned
-in the repository during implementation.
+## PowerShell setup
 
-## 3. Browser origin and proxy
+Run from the repository root. Create `.env` only once so an existing
+local configuration is not overwritten:
 
-Configure Vite to proxy:
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+```
 
-- `/api/` to Django;
-- `/ws/` to the backend ASGI server.
+Use `Ctrl+C` to stop following logs; this leaves the services running.
+The POSIX setup is the same except the first command is
+`test -f .env || cp .env.example .env`.
 
-This allows the browser to use one origin during local development and
-simplifies session-cookie and CSRF behavior.
+## POSIX setup
 
-## 4. Environment variables
+Run from the repository root:
 
-Commit `.env.example`, not `.env`.
+```sh
+test -f .env || cp .env.example .env
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+```
 
-Expected configuration categories:
+Use `Ctrl+C` to stop following logs; this leaves the services running.
 
-- Django secret key and debug mode;
-- database connection;
-- Redis connection;
-- allowed hosts and CSRF trusted origins;
-- frontend base URL;
-- local file-storage path;
-- email backend;
-- AI provider credentials;
-- AI model/profile defaults.
+## Start, inspect, and stop
 
-Never commit real secrets. Never expose backend provider keys to Vite or
-browser bundles.
+The following Docker commands work unchanged in PowerShell and POSIX
+shells from the repository root:
 
-## 5. Local email
+```sh
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+docker compose logs -f backend celery-worker
+docker compose exec backend python manage.py migrate
+docker compose down
+```
 
-Use Django’s console email backend for local development. Verification
-and invitation emails are written to the backend console so developers
-can retrieve the local links without a production mail service.
+`docker compose ps` should show all five services as healthy. The final
+command stops containers but preserves both named data volumes. Do not
+add `-v` when stopping during routine work or persistence verification.
 
-A real email provider is configured separately for deployed
-environments.
+## Quality checks
 
-## 6. Database setup
+Run the backend checks inside the pinned Python image from either shell:
 
-- Use PostgreSQL with pgvector available.
-- Enable the required PostgreSQL extensions through migrations or
-  documented database initialization.
-- Run Django migrations from the backend.
-- Use persistent volumes so database data survives container restarts.
-- Do not rely on SQLite as a substitute for the production database
-  model.
+```sh
+docker compose run --rm --no-deps backend ruff format --check .
+docker compose run --rm --no-deps backend ruff check .
+docker compose run --rm --no-deps -e DJANGO_SETTINGS_MODULE=config.settings.test backend python -m pytest
+```
 
-## 7. API documentation and types
+Run the frontend checks inside the pinned Node image:
 
-Expose the generated OpenAPI schema and interactive API documentation in
-development.
+```sh
+docker compose exec frontend npm run format:check
+docker compose exec frontend npm run lint
+docker compose exec frontend npm run typecheck
+docker compose exec frontend npm test
+docker compose exec frontend npm run build
+```
 
-Generate frontend TypeScript API types from the OpenAPI schema. The
-generation process should be reproducible and documented in package
-scripts or repository scripts.
+## Runtime checks
 
-Generated types are not edited manually.
+First check container health and the frontend/backend health endpoints.
+These examples return the HTTP status and health JSON respectively.
 
-## 8. Background tasks
+PowerShell:
 
-Run Celery workers separately from the HTTP server. Use dedicated queues
-when workload separation becomes useful, especially for document
-processing and AI tasks.
+```powershell
+$backendHostPort = (Select-String -Path .env -Pattern '^BACKEND_HOST_PORT=').Line.Split('=')[1]
+(Invoke-WebRequest -Uri http://localhost:5173/ -UseBasicParsing).StatusCode
+Invoke-RestMethod "http://localhost:$backendHostPort/api/v1/health/"
+Invoke-RestMethod http://localhost:5173/api/v1/health/
+```
 
-Scheduled cleanup, invitation expiry, and delayed document deletion may
-require Celery Beat or another scheduler.
+macOS/Linux:
 
-Tasks must be retry-safe and must not assume that a task is delivered
-exactly once.
+```sh
+BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' .env | tr -d '\r')"
+curl --fail --show-error --output /dev/null --write-out '%{http_code}\n' http://localhost:5173/
+curl --fail --show-error "http://localhost:${BACKEND_HOST_PORT}/api/v1/health/"
+curl --fail --show-error http://localhost:5173/api/v1/health/
+```
 
-## 9. Development quality gates
+Both health requests should report `status: ok` and database and Redis
+dependencies as `ok`; the frontend health request confirms the Vite HTTP
+proxy. The frontend root should return HTTP 200.
 
-Before merging a change:
+Check the pgvector extension after migrating. These commands use the
+database defaults in `.env.example`; adjust the database/user arguments
+if you changed `DB_NAME` or `DB_USER`:
 
-- run backend tests;
-- run frontend type checking;
-- run frontend tests where present;
-- run linting/formatting checks;
-- verify migrations;
-- regenerate OpenAPI and TypeScript types when API contracts change;
-- update relevant documentation and ADRs.
+```sh
+docker compose exec backend python manage.py migrate
+docker compose exec db psql -U projectbridge -d projectbridge -Atc "SELECT extname FROM pg_extension WHERE extname = 'vector';"
+```
 
-Add tests for role permissions, cross-project access, questionnaire
-conflicts, document lifecycle approvals, AI proposal application, and
-WebSocket membership checks.
+The query prints `vector` when the migration has enabled the extension.
 
-## 10. Local persistence and reset behavior
+Submit the operational task through the real worker. Local settings set
+`CELERY_TASK_ALWAYS_EAGER=False`; this command enqueues through Redis and
+waits for the worker's result:
 
-Database and uploaded files must use named Docker volumes or documented
-local paths. A normal container restart must not delete user data.
+```sh
+docker compose exec backend python -c "from config.celery_app import app; from apps.common.tasks import runtime_probe; result = runtime_probe.delay(); value = result.get(timeout=20); print(value); assert value == {'status': 'ok'}"
+```
 
-Destructive reset commands must be clearly named and documented. Do not
-make routine startup commands remove volumes.
+The result should be `{'status': 'ok'}`. The worker health check also
+uses Celery `inspect ping` and should show healthy in `docker compose ps`.
+
+Check the backend schema and interactive docs directly and through Vite.
+PowerShell:
+
+```powershell
+$backendHostPort = (Select-String -Path .env -Pattern '^BACKEND_HOST_PORT=').Line.Split('=')[1]
+(Invoke-WebRequest -Uri "http://localhost:$backendHostPort/api/schema/" -UseBasicParsing -Headers @{ Accept = 'application/vnd.oai.openapi+json' }).StatusCode
+(Invoke-WebRequest -Uri "http://localhost:$backendHostPort/api/docs/" -UseBasicParsing).StatusCode
+(Invoke-WebRequest -Uri http://localhost:5173/api/schema/ -UseBasicParsing -Headers @{ Accept = 'application/vnd.oai.openapi+json' }).StatusCode
+(Invoke-WebRequest -Uri http://localhost:5173/api/docs/ -UseBasicParsing).StatusCode
+```
+
+macOS/Linux:
+
+```sh
+BACKEND_HOST_PORT="$(sed -n 's/^BACKEND_HOST_PORT=//p' .env | tr -d '\r')"
+curl --fail --show-error --output /dev/null --write-out '%{http_code}\n' --header 'Accept: application/vnd.oai.openapi+json' "http://localhost:${BACKEND_HOST_PORT}/api/schema/"
+curl --fail --show-error --output /dev/null --write-out '%{http_code}\n' "http://localhost:${BACKEND_HOST_PORT}/api/docs/"
+curl --fail --show-error --output /dev/null --write-out '%{http_code}\n' --header 'Accept: application/vnd.oai.openapi+json' http://localhost:5173/api/schema/
+curl --fail --show-error --output /dev/null --write-out '%{http_code}\n' http://localhost:5173/api/docs/
+```
+
+All four requests should return HTTP 200. Generate types from the live
+Compose schema endpoint; this command works in PowerShell and POSIX
+shells, and writes `src/shared/api/generated/schema.d.ts` in the
+frontend container:
+
+```sh
+docker compose exec -e API_SCHEMA_URL=http://backend:8000/api/schema/ frontend npm run api:types
+docker compose exec frontend node --input-type=module -e "import { stat } from 'node:fs/promises'; const result = await stat('src/shared/api/generated/schema.d.ts'); if (result.size === 0) process.exit(1); console.log(result.size + ' bytes');"
+```
+
+The generation command exits nonzero and prints its source URL if the
+schema endpoint cannot be fetched.
+
+Verify the WebSocket upgrade through Vite. Node 24's built-in WebSocket
+client connects to Vite at `ws://localhost:5173/ws/v1/health/`; Vite
+proxies the upgrade to Django. The command succeeds only after receiving
+the expected JSON and a normal close code (`1000`):
+
+```sh
+docker compose exec frontend node --input-type=module -e "const ws = new WebSocket('ws://localhost:5173/ws/v1/health/'); let received = false; const timeout = setTimeout(() => process.exit(1), 5000); ws.addEventListener('message', (event) => { let payload; try { payload = JSON.parse(event.data); } catch { process.exit(1); } if (payload.status !== 'ok') process.exit(1); received = true; console.log(JSON.stringify(payload)); }); ws.addEventListener('close', (event) => { clearTimeout(timeout); console.log('close code=' + event.code); process.exit(received && event.code === 1000 ? 0 : 1); }); ws.addEventListener('error', () => { clearTimeout(timeout); process.exit(1); });"
+```
+
+## Persistence verification
+
+Seed one harmless Django auth-group row and one uploaded-media volume
+marker, then restart without removing volumes. These commands work in
+PowerShell and POSIX shells:
+
+```sh
+docker compose exec backend python manage.py shell -c "from django.contrib.auth.models import Group; Group.objects.update_or_create(name='compose-persistence-probe'); print('database marker seeded')"
+docker compose exec backend python -c "from pathlib import Path; Path('/app/media/compose-persistence-probe.txt').write_text('projectbridge media persistence marker'); print('media marker seeded')"
+docker compose down
+docker compose up --build -d
+docker compose ps
+docker compose exec backend python manage.py shell -c "from django.contrib.auth.models import Group; assert Group.objects.filter(name='compose-persistence-probe').exists(); print('database marker persisted')"
+docker compose exec backend python -c "from pathlib import Path; path = Path('/app/media/compose-persistence-probe.txt'); assert path.read_text().strip() == 'projectbridge media persistence marker'; print('media marker persisted')"
+```
+
+Do not use `docker compose down -v`; it deletes the volumes this check is
+meant to preserve. Leave the stack running after this verification so
+the local runtime is ready to use.
