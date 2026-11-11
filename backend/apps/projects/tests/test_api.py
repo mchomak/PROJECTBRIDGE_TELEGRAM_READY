@@ -825,6 +825,40 @@ def test_passport_patch_requires_version_and_field_rejects_unknown_or_invalid_da
     assert passport.goal == ""
 
 
+def test_passport_patch_openapi_requires_positive_version_and_keeps_fields_optional():
+    from drf_spectacular.generators import SchemaGenerator
+
+    schema = SchemaGenerator().get_schema(request=None, public=True)
+    operation = schema["paths"]["/api/v1/projects/{project_id}/passport/"]["patch"]
+    request_body = operation["requestBody"]
+    assert request_body["required"] is True
+
+    request_schema = request_body["content"]["application/json"]["schema"]
+    request_schema = schema["components"]["schemas"][
+        request_schema["$ref"].rsplit("/", maxsplit=1)[-1]
+    ]
+    assert request_schema["required"] == ["version"]
+    assert request_schema["properties"]["version"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    passport_fields = {
+        "goal",
+        "target_audience",
+        "expected_result",
+        "functional_scope",
+        "integrations",
+        "constraints",
+        "deadline",
+        "budget_min",
+        "budget_max",
+        "currency",
+        "additional_data",
+    }
+    assert passport_fields <= request_schema["properties"].keys()
+    assert passport_fields.isdisjoint(request_schema["required"])
+
+
 @pytest.mark.django_db
 def test_customer_cannot_patch_passport_while_project_is_editable():
     from apps.projects.models import ProjectMember, ProjectPassport

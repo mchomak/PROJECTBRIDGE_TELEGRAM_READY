@@ -43,6 +43,7 @@ from .serializers import (
     ProjectListResponseSerializer,
     ProjectMemberSummarySerializer,
     ProjectMetadataUpdateSerializer,
+    ProjectPassportPatchSchemaSerializer,
     ProjectPassportResponseSerializer,
     ProjectPassportUpdateSerializer,
     ProjectResponseSerializer,
@@ -345,7 +346,7 @@ class ProjectPassportView(CsrfSanitizingAPIView):
     @extend_schema(
         tags=["projects"],
         operation_id="projects_passport_update",
-        request=ProjectPassportUpdateSerializer,
+        request=ProjectPassportPatchSchemaSerializer,
         responses={
             200: ProjectPassportResponseSerializer,
             400: ErrorEnvelopeSerializer,

@@ -164,3 +164,20 @@ class ProjectPassportUpdateSerializer(serializers.Serializer):
                 {"non_field_errors": ["At least one passport field is required."]}
             )
         return attrs
+
+
+class ProjectPassportPatchSchemaSerializer(ProjectPassportUpdateSerializer):
+    """Keep the version required in drf-spectacular's PATCH request schema.
+
+    drf-spectacular marks every serializer partial for PATCH operations. The
+    passport uses optional business fields but requires the optimistic version,
+    so the schema-only serializer ignores that automatic partial flag.
+    """
+
+    @property
+    def partial(self):
+        return False
+
+    @partial.setter
+    def partial(self, value):
+        del value
