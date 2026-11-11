@@ -37,6 +37,13 @@ def test_anonymous_project_mutations_and_reads_return_shared_401_envelope():
             format="json",
         ),
         client.get(f"/api/v1/projects/{project.pk}/members/"),
+        client.get(f"/api/v1/projects/{project.pk}/passport/"),
+        client.patch(
+            f"/api/v1/projects/{project.pk}/passport/",
+            {"version": 1, "goal": "Anonymous"},
+            format="json",
+        ),
+        client.post(f"/api/v1/projects/{project.pk}/complete/", {}, format="json"),
     )
 
     for response in responses:
@@ -607,3 +614,510 @@ def test_metadata_patch_enforces_role_membership_state_and_server_fields():
     assert draft_project.name == "Draft"
     assert completed_project.name == "Completed"
     assert archived_project.name == "Archived"
+
+
+@pytest.mark.parametrize("project_status", ["draft", "active", "completed", "archived"])
+@pytest.mark.django_db
+def test_active_project_members_can_read_exact_passport_fields_in_every_status(
+    project_status,
+):
+    from apps.projects.models import Project, ProjectMember, ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = get_user_model().objects.create_user(
+        email=f"passport-reader-executor-{project_status}@example.com"
+    )
+    customer = get_user_model().objects.create_user(
+        email=f"passport-reader-customer-{project_status}@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Readable passport", "project_type": "website"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role="customer",
+        status="active",
+    )
+    status_values = {"status": project_status}
+    if project_status == "completed":
+        status_values["completed_at"] = timezone.now()
+    elif project_status == "archived":
+        status_values.update(
+            status_before_archive="active",
+            archived_at=timezone.now(),
+        )
+    Project.objects.filter(pk=project.pk).update(**status_values)
+    expected_fields = {
+        "id",
+        "project_id",
+        "goal",
+        "target_audience",
+        "expected_result",
+        "functional_scope",
+        "integrations",
+        "constraints",
+        "deadline",
+        "budget_min",
+        "budget_max",
+        "currency",
+        "additional_data",
+        "version",
+        "created_at",
+        "updated_at",
+    }
+
+    for participant in (executor, customer):
+        client = APIClient()
+        client.force_authenticate(user=participant)
+        response = client.get(f"/api/v1/projects/{project.pk}/passport/")
+        assert response.status_code == 200
+        assert set(response.data) == expected_fields
+        assert response.data["project_id"] == str(project.pk)
+        assert response.data["version"] == 1
+        assert response.data["goal"] == ""
+        assert response.data["functional_scope"] == {}
+
+    assert ProjectPassport.objects.filter(project=project).exists()
+
+
+@pytest.mark.django_db
+def test_project_passport_read_and_update_are_scoped_to_active_membership():
+    from apps.projects.models import ProjectMember
+    from apps.projects.services import create_project
+
+    executor = get_user_model().objects.create_user(
+        email="passport-scope-owner@example.com"
+    )
+    former_member = get_user_model().objects.create_user(
+        email="passport-scope-former@example.com"
+    )
+    outsider = get_user_model().objects.create_user(
+        email="passport-scope-outsider@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Private passport", "project_type": "other"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=former_member,
+        role="customer",
+        status="left",
+    )
+
+    for user in (former_member, outsider):
+        client, csrf = _authenticated_client(user)
+        read_response = client.get(f"/api/v1/projects/{project.pk}/passport/")
+        write_response = client.patch(
+            f"/api/v1/projects/{project.pk}/passport/",
+            {"version": 1, "goal": "Unauthorized"},
+            format="json",
+            **csrf,
+        )
+        assert read_response.status_code == 404
+        assert write_response.status_code == 404
+        assert read_response.data["code"] == "not_found"
+        assert write_response.data["code"] == "not_found"
+
+
+@pytest.mark.django_db
+def test_executor_passport_patch_updates_exact_fields_and_audits_no_values():
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = _verified_user(email="passport-patch-executor@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Passport update", "project_type": "automation"},
+    )
+    client, csrf = _authenticated_client(executor)
+
+    response = client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {
+            "version": 1,
+            "goal": "",
+            "target_audience": "Operations teams",
+            "expected_result": "Fewer manual steps",
+            "functional_scope": ["daily report"],
+            "integrations": {"service": "mail"},
+            "constraints": {"region": "EU"},
+            "deadline": "2026-12-01",
+            "budget_min": "1000.25",
+            "budget_max": "2000",
+            "currency": "usd",
+            "additional_data": {"source": "client supplied"},
+        },
+        format="json",
+        **csrf,
+    )
+
+    assert response.status_code == 200
+    assert response.data["version"] == 2
+    assert response.data["goal"] == ""
+    assert response.data["currency"] == "USD"
+    assert response.data["deadline"] == "2026-12-01"
+    assert response.data["budget_min"] == "1000.2500000000"
+    assert response.data["functional_scope"] == ["daily report"]
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.version == 2
+    assert passport.additional_data == {"source": "client supplied"}
+    audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="project.passport_updated",
+    )
+    assert audit.metadata == {
+        "changed_fields": [
+            "additional_data",
+            "budget_max",
+            "budget_min",
+            "constraints",
+            "currency",
+            "deadline",
+            "expected_result",
+            "functional_scope",
+            "goal",
+            "integrations",
+            "target_audience",
+        ],
+        "previous_version": 1,
+        "version": 2,
+    }
+    assert "Operations teams" not in str(audit.metadata)
+    assert "client supplied" not in str(audit.metadata)
+
+
+@pytest.mark.django_db
+def test_passport_patch_requires_version_and_field_rejects_unknown_or_invalid_data():
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = _verified_user(email="passport-validation@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Passport validation", "project_type": "website"},
+    )
+    client, csrf = _authenticated_client(executor)
+    invalid_payloads = (
+        {"goal": "Missing version"},
+        {"version": 1},
+        {"version": 1, "project_id": str(project.pk), "goal": "No"},
+        {"version": 1, "goal": "Invalid currency", "currency": "U$D"},
+        {"version": 1, "goal": "Invalid deadline", "deadline": "not-a-date"},
+        {"version": 1, "goal": "Invalid JSON", "functional_scope": None},
+    )
+
+    for payload in invalid_payloads:
+        response = client.patch(
+            f"/api/v1/projects/{project.pk}/passport/",
+            payload,
+            format="json",
+            **csrf,
+        )
+        assert response.status_code == 400
+        assert response.data["code"] == "validation_error"
+
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.version == 1
+    assert passport.goal == ""
+
+
+@pytest.mark.django_db
+def test_customer_cannot_patch_passport_while_project_is_editable():
+    from apps.projects.models import ProjectMember, ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = get_user_model().objects.create_user(
+        email="passport-role-owner@example.com"
+    )
+    customer = get_user_model().objects.create_user(
+        email="passport-role-customer@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Customer cannot edit", "project_type": "website"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role="customer",
+        status="active",
+    )
+    client, csrf = _authenticated_client(customer)
+
+    response = client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {"version": 1, "goal": "Customer supplied"},
+        format="json",
+        **csrf,
+    )
+
+    assert response.status_code == 403
+    assert response.data["code"] == "permission_denied"
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.goal == ""
+    assert passport.version == 1
+
+
+@pytest.mark.django_db
+def test_stale_passport_patch_returns_409_without_overwriting_or_auditing_again():
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = _verified_user(email="passport-stale@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Passport stale", "project_type": "website"},
+    )
+    client, csrf = _authenticated_client(executor)
+    first_response = client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {"version": 1, "goal": "Newest value"},
+        format="json",
+        **csrf,
+    )
+    stale_response = client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {"version": 1, "goal": "Stale overwrite"},
+        format="json",
+        **csrf,
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.data["version"] == 2
+    assert stale_response.status_code == 409
+    assert stale_response.data["code"] == "conflict"
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.goal == "Newest value"
+    assert passport.version == 2
+    assert (
+        ProjectAuditLog.objects.filter(
+            project=project,
+            action="project.passport_updated",
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.parametrize("project_status", ["completed", "archived"])
+@pytest.mark.django_db
+def test_passport_is_read_only_for_every_role_after_completion_or_archive(
+    project_status,
+):
+    from apps.projects.models import Project, ProjectMember, ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = get_user_model().objects.create_user(
+        email=f"passport-readonly-executor-{project_status}@example.com"
+    )
+    customer = get_user_model().objects.create_user(
+        email=f"passport-readonly-customer-{project_status}@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Read-only passport", "project_type": "website"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role="customer",
+        status="active",
+    )
+    status_values = {"status": project_status}
+    if project_status == "completed":
+        status_values["completed_at"] = timezone.now()
+    else:
+        status_values.update(
+            status_before_archive="active",
+            archived_at=timezone.now(),
+        )
+    Project.objects.filter(pk=project.pk).update(**status_values)
+
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    executor_response = executor_client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {"version": 1, "goal": "No write"},
+        format="json",
+        **executor_csrf,
+    )
+    customer_response = customer_client.patch(
+        f"/api/v1/projects/{project.pk}/passport/",
+        {"version": 1, "goal": "No write"},
+        format="json",
+        **customer_csrf,
+    )
+
+    assert executor_response.status_code == 409
+    assert customer_response.status_code == 403
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.goal == ""
+    assert passport.version == 1
+
+
+@pytest.mark.django_db
+def test_lifecycle_actions_enforce_actor_and_source_status_and_preserve_data():
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import Project, ProjectMember, ProjectPassport
+    from apps.projects.services import create_project
+
+    executor = get_user_model().objects.create_user(
+        email="lifecycle-api-owner@example.com"
+    )
+    customer = get_user_model().objects.create_user(
+        email="lifecycle-api-customer@example.com"
+    )
+    outsider = get_user_model().objects.create_user(
+        email="lifecycle-api-outsider@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Lifecycle API", "project_type": "website"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role="customer",
+        status="active",
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    outsider_client, outsider_csrf = _authenticated_client(outsider)
+
+    complete_from_draft = executor_client.post(
+        f"/api/v1/projects/{project.pk}/complete/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    reopen_from_draft = executor_client.post(
+        f"/api/v1/projects/{project.pk}/reopen/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    restore_from_draft = executor_client.post(
+        f"/api/v1/projects/{project.pk}/restore/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    customer_archive = customer_client.post(
+        f"/api/v1/projects/{project.pk}/archive/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+    outsider_archive = outsider_client.post(
+        f"/api/v1/projects/{project.pk}/archive/",
+        {},
+        format="json",
+        **outsider_csrf,
+    )
+
+    assert complete_from_draft.status_code == 409
+    assert reopen_from_draft.status_code == 409
+    assert restore_from_draft.status_code == 409
+    assert customer_archive.status_code == 403
+    assert outsider_archive.status_code == 404
+
+    archived = executor_client.post(
+        f"/api/v1/projects/{project.pk}/archive/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert archived.status_code == 200
+    assert archived.data["status"] == "archived"
+    assert "status_before_archive" not in archived.data
+    project.refresh_from_db()
+    assert project.status_before_archive == "draft"
+    assert project.archived_at is not None
+    assert ProjectMember.objects.filter(project=project).count() == 2
+    assert ProjectPassport.objects.filter(project=project).exists()
+    assert executor_client.get("/api/v1/projects/").data["count"] == 0
+    assert executor_client.get("/api/v1/projects/?status=archived").data["count"] == 1
+
+    restored = executor_client.post(
+        f"/api/v1/projects/{project.pk}/restore/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert restored.status_code == 200
+    assert restored.data["status"] == "draft"
+    project.refresh_from_db()
+    assert project.status_before_archive is None
+    assert project.archived_at is None
+
+    Project.objects.filter(pk=project.pk).update(status="active")
+    completed = executor_client.post(
+        f"/api/v1/projects/{project.pk}/complete/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert completed.status_code == 200
+    assert completed.data["status"] == "completed"
+    completed_at = completed.data["completed_at"]
+    assert completed_at is not None
+
+    reopened = executor_client.post(
+        f"/api/v1/projects/{project.pk}/reopen/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert reopened.status_code == 200
+    assert reopened.data["status"] == "active"
+    assert reopened.data["completed_at"] == completed_at
+
+    archived_active = executor_client.post(
+        f"/api/v1/projects/{project.pk}/archive/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert archived_active.status_code == 200
+    project.refresh_from_db()
+    assert project.status_before_archive == "active"
+    restored_active = executor_client.post(
+        f"/api/v1/projects/{project.pk}/restore/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert restored_active.status_code == 200
+    assert restored_active.data["status"] == "active"
+    assert restored_active.data["completed_at"] == completed_at
+
+    completed_again = executor_client.post(
+        f"/api/v1/projects/{project.pk}/complete/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert completed_again.status_code == 200
+    archived_completed = executor_client.post(
+        f"/api/v1/projects/{project.pk}/archive/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert archived_completed.status_code == 200
+    restored_completed = executor_client.post(
+        f"/api/v1/projects/{project.pk}/restore/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert restored_completed.status_code == 200
+    assert restored_completed.data["status"] == "completed"
+    assert (
+        restored_completed.data["completed_at"] == completed_again.data["completed_at"]
+    )
+    assert ProjectAuditLog.objects.filter(project=project).count() == 10

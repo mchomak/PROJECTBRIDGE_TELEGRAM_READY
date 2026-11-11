@@ -180,3 +180,284 @@ def test_database_constraints_reject_invalid_project_and_membership_state():
     assert_database_rejects(
         lambda: Project.objects.filter(pk=project.pk).update(archived_at=timezone.now())
     )
+
+
+@pytest.mark.django_db
+def test_project_lifecycle_services_follow_transitions_and_audit_each_mutation():
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import Project, ProjectMember
+    from apps.projects.services import (
+        archive_project,
+        complete_project,
+        create_project,
+        reopen_project,
+        restore_project,
+    )
+
+    executor = get_user_model().objects.create_user(email="lifecycle@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Lifecycle", "project_type": "website"},
+    )
+    membership = ProjectMember.objects.get(project=project, user=executor)
+
+    archived_from_draft = archive_project(project_id=project.pk, actor=executor)
+    assert archived_from_draft.status == "archived"
+    assert archived_from_draft.status_before_archive == "draft"
+    assert archived_from_draft.archived_at is not None
+    restored_draft = restore_project(project_id=project.pk, actor=executor)
+    assert restored_draft.status == "draft"
+    assert restored_draft.status_before_archive is None
+    assert restored_draft.archived_at is None
+
+    Project.objects.filter(pk=project.pk).update(status="active")
+    completed = complete_project(project_id=project.pk, actor=executor)
+    first_completed_at = completed.completed_at
+    assert completed.status == "completed"
+    assert first_completed_at is not None
+    reopened = reopen_project(project_id=project.pk, actor=executor)
+    assert reopened.status == "active"
+    assert reopened.completed_at == first_completed_at
+    archived_from_active = archive_project(project_id=project.pk, actor=executor)
+    assert archived_from_active.status_before_archive == "active"
+    restored_active = restore_project(project_id=project.pk, actor=executor)
+    assert restored_active.status == "active"
+    assert restored_active.completed_at == first_completed_at
+    completed_again = complete_project(project_id=project.pk, actor=executor)
+    assert completed_again.status == "completed"
+    assert completed_again.completed_at >= first_completed_at
+
+    archived_from_completed = archive_project(project_id=project.pk, actor=executor)
+    assert archived_from_completed.status_before_archive == "completed"
+    archived_at = archived_from_completed.archived_at
+    restored_completed = restore_project(project_id=project.pk, actor=executor)
+    assert restored_completed.status == "completed"
+    assert restored_completed.status_before_archive is None
+    assert restored_completed.archived_at is None
+    assert archived_at is not None
+
+    assert Project.objects.filter(pk=project.pk).exists()
+    assert ProjectMember.objects.filter(pk=membership.pk).exists()
+    assert ProjectAuditLog.objects.filter(project=project).count() == 10
+    lifecycle_audits = (
+        ProjectAuditLog.objects.filter(project=project)
+        .exclude(action="project.created")
+        .order_by("created_at")
+    )
+    assert list(lifecycle_audits.values_list("metadata", flat=True)) == [
+        {"from_status": "draft", "to_status": "archived"},
+        {"from_status": "archived", "to_status": "draft"},
+        {"from_status": "active", "to_status": "completed"},
+        {"from_status": "completed", "to_status": "active"},
+        {"from_status": "active", "to_status": "archived"},
+        {"from_status": "archived", "to_status": "active"},
+        {"from_status": "active", "to_status": "completed"},
+        {"from_status": "completed", "to_status": "archived"},
+        {"from_status": "archived", "to_status": "completed"},
+    ]
+
+
+@pytest.mark.django_db
+def test_lifecycle_services_reject_wrong_roles_and_invalid_transitions():
+    from apps.projects.models import ProjectMember
+    from apps.projects.services import (
+        ProjectNotFoundError,
+        ProjectPermissionError,
+        ProjectStateConflictError,
+        archive_project,
+        complete_project,
+        create_project,
+        reopen_project,
+        restore_project,
+    )
+
+    executor = get_user_model().objects.create_user(email="lifecycle-owner@example.com")
+    customer = get_user_model().objects.create_user(
+        email="lifecycle-customer@example.com"
+    )
+    outsider = get_user_model().objects.create_user(
+        email="lifecycle-outsider@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Draft project", "project_type": "website"},
+    )
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role="customer",
+        status="active",
+    )
+
+    with pytest.raises(ProjectPermissionError):
+        archive_project(project_id=project.pk, actor=customer)
+    with pytest.raises(ProjectNotFoundError):
+        archive_project(project_id=project.pk, actor=outsider)
+    with pytest.raises(ProjectStateConflictError):
+        complete_project(project_id=project.pk, actor=executor)
+    with pytest.raises(ProjectStateConflictError):
+        reopen_project(project_id=project.pk, actor=executor)
+    with pytest.raises(ProjectStateConflictError):
+        restore_project(project_id=project.pk, actor=executor)
+
+    archive_project(project_id=project.pk, actor=executor)
+    with pytest.raises(ProjectStateConflictError):
+        archive_project(project_id=project.pk, actor=executor)
+
+
+@pytest.mark.django_db
+def test_passport_update_uses_expected_version_and_audits_field_names_only():
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import (
+        ProjectPassportVersionConflictError,
+        create_project,
+        update_passport,
+    )
+
+    executor = get_user_model().objects.create_user(email="passport-owner@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Passport", "project_type": "website"},
+    )
+
+    updated = update_passport(
+        project_id=project.pk,
+        actor=executor,
+        expected_version=1,
+        changes={"goal": "Launch a public website", "currency": "USD"},
+    )
+
+    assert updated.version == 2
+    assert updated.goal == "Launch a public website"
+    assert updated.currency == "USD"
+    audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="project.passport_updated",
+    )
+    assert audit.metadata == {
+        "changed_fields": ["currency", "goal"],
+        "previous_version": 1,
+        "version": 2,
+    }
+    assert "Launch a public website" not in str(audit.metadata)
+
+    with pytest.raises(ProjectPassportVersionConflictError):
+        update_passport(
+            project_id=project.pk,
+            actor=executor,
+            expected_version=1,
+            changes={"goal": "Stale replacement"},
+        )
+
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.goal == "Launch a public website"
+    assert passport.version == 2
+    assert (
+        ProjectAuditLog.objects.filter(
+            project=project,
+            action="project.passport_updated",
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_passport_updates_with_same_version_only_commit_once():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from django.db import close_old_connections
+
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import (
+        ProjectPassportVersionConflictError,
+        create_project,
+        update_passport,
+    )
+
+    executor = get_user_model().objects.create_user(email="passport-race@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Concurrent passport", "project_type": "website"},
+    )
+    barrier = Barrier(2)
+
+    def update_goal(value):
+        close_old_connections()
+        try:
+            barrier.wait(timeout=5)
+            update_passport(
+                project_id=project.pk,
+                actor=executor,
+                expected_version=1,
+                changes={"goal": value},
+            )
+            return "updated"
+        except ProjectPassportVersionConflictError:
+            return "stale"
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as executor_pool:
+        outcomes = list(executor_pool.map(update_goal, ("First", "Second")))
+
+    assert sorted(outcomes) == ["stale", "updated"]
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.version == 2
+    assert passport.goal in {"First", "Second"}
+
+
+@pytest.mark.django_db
+def test_passport_update_rolls_back_when_audit_write_fails(monkeypatch):
+    from apps.projects.models import ProjectPassport
+    from apps.projects.services import create_project, update_passport
+
+    executor = get_user_model().objects.create_user(
+        email="passport-audit-fail@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Audit rollback", "project_type": "website"},
+    )
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("simulated audit failure")
+
+    monkeypatch.setattr("apps.projects.services.record_project_action", fail_audit)
+    with pytest.raises(RuntimeError, match="simulated audit failure"):
+        update_passport(
+            project_id=project.pk,
+            actor=executor,
+            expected_version=1,
+            changes={"goal": "Must roll back"},
+        )
+
+    passport = ProjectPassport.objects.get(project=project)
+    assert passport.goal == ""
+    assert passport.version == 1
+
+
+@pytest.mark.django_db
+def test_lifecycle_transition_rolls_back_when_audit_write_fails(monkeypatch):
+    from apps.projects.services import archive_project, create_project
+
+    executor = get_user_model().objects.create_user(
+        email="lifecycle-audit-fail@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Audit rollback", "project_type": "website"},
+    )
+
+    def fail_audit(**_kwargs):
+        raise RuntimeError("simulated audit failure")
+
+    monkeypatch.setattr("apps.projects.services.record_project_action", fail_audit)
+    with pytest.raises(RuntimeError, match="simulated audit failure"):
+        archive_project(project_id=project.pk, actor=executor)
+
+    project.refresh_from_db()
+    assert project.status == "draft"
+    assert project.status_before_archive is None
+    assert project.archived_at is None

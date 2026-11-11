@@ -1,4 +1,10 @@
-from .models import Project, ProjectMember, ProjectMemberStatus, ProjectStatus
+from .models import (
+    Project,
+    ProjectMember,
+    ProjectMemberStatus,
+    ProjectPassport,
+    ProjectStatus,
+)
 
 
 def get_projects_for_member(*, user, status=None):
@@ -30,3 +36,11 @@ def get_active_project_members(*, project_id):
         .select_related("user")
         .order_by("joined_at", "id")
     )
+
+
+def get_passport_for_member(*, project_id, user):
+    return ProjectPassport.objects.filter(
+        project_id=project_id,
+        project__memberships__user=user,
+        project__memberships__status=ProjectMemberStatus.ACTIVE,
+    ).first()
