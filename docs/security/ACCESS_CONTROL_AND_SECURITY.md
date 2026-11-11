@@ -64,12 +64,28 @@ Use Django session authentication for the browser application.
 
 Requirements:
 
-- HttpOnly session cookies.
-- Secure cookies in production.
-- CSRF protection for state-changing requests.
+- Use Django session authentication. The session cookie is HttpOnly and
+  uses `SameSite=Lax`; production session and CSRF cookies are Secure.
+- `GET /api/v1/auth/csrf/` establishes the readable CSRF cookie and returns
+  a token. Browser clients send it in `X-CSRFToken` on state-changing
+  requests. Anonymous registration and login are subject to the same CSRF
+  requirement as authenticated writes.
 - HTTPS in production.
 - Email verification before invitation acceptance.
-- Rate limiting for authentication and token endpoints.
+- Login may create a session before email verification so the user can
+  continue verification. The profile continues to report the address as
+  unverified until confirmation; product routes remain gated.
+- Return the same `401` response for unknown email and wrong password.
+  Never reveal whether an email has an account through authentication or
+  verification responses.
+- Rate-limit authentication and token endpoints using the shared runtime
+  cache. Initial DRF scopes are `register` 5/hour, `login` 10/minute,
+  `resend` 3/hour, and `confirm` 10/hour. These are starting values, not
+  final limits for all API groups.
+- Return API failures in the common JSON envelope with `code`, `detail`,
+  `errors`, and UUID `request_id`; unauthenticated requests receive `401`,
+  permission/CSRF failures receive `403`, and throttled requests receive
+  `429`. CSRF failure details must not expose middleware internals.
 - Password hashing through Django’s password hashers; Argon2 is the
   preferred configured hasher.
 

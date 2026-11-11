@@ -1,7 +1,7 @@
 # ProjectBridge API Contract
 
-**Status:** Endpoint baseline; request/response schemas to be finalized
-during implementation  
+**Status:** Endpoint baseline; Stage 02 authentication schemas finalized;
+other request/response schemas remain to be finalized  
 **API version:** v1  
 **Last updated:** 2026-11-11
 
@@ -80,6 +80,43 @@ responses to clients.
 
 Unverified users must not accept email-bound project invitations.
 Password reset is not yet specified and is listed as an open decision.
+
+### Session authentication contract
+
+`GET /api/v1/auth/csrf/` returns `{"csrf_token": "..."}` and sets the
+readable CSRF cookie. Browser clients send that token in `X-CSRFToken` on
+every state-changing request. This applies to anonymous registration and
+login as well as authenticated requests.
+
+Registration accepts `{"email": "...", "password": "..."}` and returns
+`201` with a `UserSummary`; it sends the verification email and does not
+create a session. Invalid credentials, a weak password, or an existing
+normalized email return `400` with field-level `errors` where applicable.
+
+Login accepts the same credentials and returns `200` with a `UserSummary`
+and an HttpOnly Django session cookie. Unknown email and wrong password
+both return the same `401` response. Unverified accounts may log in to
+continue verification; `email_verified` remains `false` and
+`email_verified_at` remains `null` until confirmation.
+
+`GET /api/v1/auth/me/` returns only the current session's user profile:
+`id`, normalized `email`, `first_name`, `last_name`, `email_verified`, and
+`email_verified_at`. It returns `401` when the request has no valid session.
+Authenticated `POST /api/v1/auth/logout/` invalidates the session and
+returns an empty `204` response; it also requires CSRF validation.
+
+API errors use the JSON envelope `{"code": "...", "detail": "...",
+"errors": null, "request_id": "<uuid>"}`. `errors` contains field
+details for validation failures. Authentication-required requests return
+`401`; permission or CSRF failures return `403`; throttled requests return
+`429`. Responses do not include stack traces, secrets, or internal error
+details.
+
+Initial DRF scoped authentication throttles use the configured shared
+cache: `register` 5/hour, `login` 10/minute, `resend` 3/hour, and `confirm`
+10/hour. Exceeding a scope returns `429` with the common error envelope.
+These are starting limits; see open decision 21 for remaining endpoint
+groups and final review.
 
 ## 6. Projects and passport — `projects`
 

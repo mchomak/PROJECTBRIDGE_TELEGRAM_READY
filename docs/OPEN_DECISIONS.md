@@ -63,8 +63,10 @@ behavior silently.
 ## API and implementation
 
 20. **Pagination defaults:** Set page sizes and cursor behavior.
-21. **Rate limits:** Set limits for authentication, invitations,
-    uploads, chat, and AI actions.
+21. **Rate limits:** Stage 02 starts with authentication scopes of
+    `register` 5/hour, `login` 10/minute, `resend` 3/hour, and `confirm`
+    10/hour through the shared cache. Finalize limits for invitations,
+    uploads, chat, and AI actions, and review these initial values.
 22. **Idempotency storage:** Define key scope and retention for
     `Idempotency-Key`.
 23. **Optimistic concurrency:** Define which resources use version
