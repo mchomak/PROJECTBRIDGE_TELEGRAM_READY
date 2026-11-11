@@ -1,0 +1,50 @@
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Node and frontend build output
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# Python environments, bytecode, and caches
+.venv/
+venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local databases and user data
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3
+postgres-data/
+postgres_data/
+pgdata/
+media/
+uploads/
+backend/media/
+backend/uploads/
+
+# General build output and logs
+dist/
+build/
+coverage/
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Autopilot local server state
+.autopilot/serve.*
