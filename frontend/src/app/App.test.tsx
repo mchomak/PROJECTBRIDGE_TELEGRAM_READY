@@ -133,6 +133,12 @@ test('unverified login stays in the verification flow', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeTruthy();
   expect(screen.getByLabelText('Email')).toHaveProperty('value', 'new-user@example.com');
+  expect(
+    screen.getByText(
+      'After you verify your email, log in again to continue. If you need a verification email, request one below.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/We sent a verification link to/)).toBeNull();
   expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/v1/auth/me/')).toBe(false);
 });
 

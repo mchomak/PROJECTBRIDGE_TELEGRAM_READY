@@ -12,7 +12,7 @@ export function VerificationRequiredPage() {
   const location = useLocation();
   const state = (location.state as VerificationState | null) ?? {};
   const [email, setEmail] = useState(state.email ?? '');
-  const [sent, setSent] = useState(state.sent ?? false);
+  const [resendSent, setResendSent] = useState(false);
   const resend = useResendVerification();
   const fieldErrors = getApiFieldErrors(resend.error);
 
@@ -21,7 +21,7 @@ export function VerificationRequiredPage() {
     resend.mutate(
       { email },
       {
-        onSuccess: () => setSent(true),
+        onSuccess: () => setResendSent(true),
       },
     );
   }
@@ -31,7 +31,16 @@ export function VerificationRequiredPage() {
       <section className="auth-card" aria-labelledby="verification-required-title">
         <h1 id="verification-required-title">Verify your email</h1>
         <p>Confirm your email address to continue to ProjectBridge.</p>
-        {state.email && <p>We sent a verification link to {state.email}.</p>}
+        {state.email && state.sent ? (
+          <p>We sent a verification link to {state.email}.</p>
+        ) : (
+          state.email && (
+            <p>
+              After you verify your email, log in again to continue. If you need a verification
+              email, request one below.
+            </p>
+          )
+        )}
 
         <form onSubmit={submit} noValidate>
           <label htmlFor="verification-email">Email</label>
@@ -52,7 +61,7 @@ export function VerificationRequiredPage() {
           {resend.error && Object.keys(fieldErrors).length === 0 && (
             <p role="alert">{resend.error.message}</p>
           )}
-          {sent && (
+          {resendSent && (
             <p role="status">If that address needs verification, a new message is on its way.</p>
           )}
           <button disabled={resend.isPending || !email.trim()} type="submit">
