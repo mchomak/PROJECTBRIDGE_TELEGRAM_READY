@@ -13,3 +13,8 @@ ALLOWED_HOSTS = parse_csv_environment("DJANGO_ALLOWED_HOSTS") or [
 ]
 CSRF_TRUSTED_ORIGINS = parse_csv_environment("DJANGO_CSRF_TRUSTED_ORIGINS")
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+FRONTEND_BASE_URL = (
+    os.environ.get("FRONTEND_BASE_URL") or "http://localhost:5173"
+).rstrip("/")
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False

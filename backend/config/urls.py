@@ -2,7 +2,10 @@ from django.conf import settings
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-urlpatterns = [path("api/v1/health/", include("apps.health.urls"))]
+urlpatterns = [
+    path("api/v1/health/", include("apps.health.urls")),
+    path("api/v1/auth/", include("apps.accounts.api.urls")),
+]
 
 if settings.DEBUG:
     urlpatterns += [

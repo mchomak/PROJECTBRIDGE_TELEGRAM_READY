@@ -1,4 +1,5 @@
 Django==5.2.19
+argon2-cffi==25.1.0
 djangorestframework==3.17.2
 drf-spectacular==0.30.0
 channels==4.3.2

@@ -21,6 +21,7 @@ def run_production_process(
     environment.pop("DJANGO_SECRET_KEY", None)
     environment.pop("DJANGO_ALLOWED_HOSTS", None)
     environment.pop("DJANGO_CSRF_TRUSTED_ORIGINS", None)
+    environment["FRONTEND_BASE_URL"] = "https://app.example"
 
     if secret_key is not None:
         environment["DJANGO_SECRET_KEY"] = secret_key
@@ -105,4 +106,34 @@ print(json.dumps({
         "allowed_hosts": ["api.example.com", "admin.example.com"],
         "schema_status": 404,
         "docs_status": 404,
+    }
+
+
+def test_production_uses_secure_browser_cookie_defaults():
+    script = (
+        "import json\n"
+        "import django; django.setup()\n"
+        "from django.conf import settings\n"
+        "print(json.dumps({"
+        "'session_httponly': settings.SESSION_COOKIE_HTTPONLY, "
+        "'session_secure': settings.SESSION_COOKIE_SECURE, "
+        "'session_samesite': settings.SESSION_COOKIE_SAMESITE, "
+        "'csrf_httponly': settings.CSRF_COOKIE_HTTPONLY, "
+        "'csrf_secure': settings.CSRF_COOKIE_SECURE, "
+        "'csrf_samesite': settings.CSRF_COOKIE_SAMESITE}))"
+    )
+    result = run_production_process(
+        script,
+        secret_key="production-secret-key-for-isolated-settings-test",
+        allowed_hosts="api.example.com",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "session_httponly": True,
+        "session_secure": True,
+        "session_samesite": "Lax",
+        "csrf_httponly": False,
+        "csrf_secure": True,
+        "csrf_samesite": "Lax",
     }

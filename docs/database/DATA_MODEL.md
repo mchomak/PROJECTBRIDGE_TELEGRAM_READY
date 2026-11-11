@@ -28,17 +28,27 @@ finalized before migrations
 | Field               | Type / rule          | Notes                                    |
 |:--------------------|:---------------------|:-----------------------------------------|
 | `id`                | UUID, PK             | User identifier                          |
-| `email`             | Unique email         | Login identifier; normalize consistently |
+| `email`             | Unique email         | Login identifier; trim and casefold before validation and storage |
 | `password`          | Django password hash | Never store plaintext                    |
-| `first_name`        | String               | Required or optionality to be finalized  |
-| `last_name`         | String               | Required or optionality to be finalized  |
+| `first_name`        | String, optional     | Blank value is `""`                      |
+| `last_name`         | String, optional     | Blank value is `""`                      |
 | `email_verified_at` | Nullable timestamp   | Null until verified                      |
 | `is_active`         | Boolean              | Django account activation                |
 | `created_at`        | Timestamp            | Creation time                            |
 | `updated_at`        | Timestamp            | Last update                              |
 
-Use a custom Django user model based on `AbstractUser`, configured for
-email-based authentication. Set it before the first migration.
+The Django model is `accounts.User` (Python package
+`apps.accounts`), based on `AbstractUser` with UUID primary key, unique
+email login, and an email-only manager. Set
+`AUTH_USER_MODEL = "accounts.User"`. The manager trims and applies
+Unicode `casefold()` to the full email address before uniqueness checks
+and storage. This intentionally treats the full address as
+case-insensitive.
+
+Password changes use Django's password hashing and validators. The
+preferred configured hasher is Argon2; PBKDF2 remains enabled to read
+compatible existing Django hashes. First and last names are optional
+and blank by default.
 
 ### `EmailVerificationToken`
 
@@ -46,7 +56,27 @@ Fields: `id`, `user_id`, `token_hash`, `expires_at`, `used_at`,
 `created_at`.
 
 Store only a hash of the verification token. Enforce single use and
-expiration.
+expiration. Stage 02 uses a SHA-256 hex digest, a 24-hour lifetime, and
+one active token per user. Reissuing a token marks the previous token
+used before creating the replacement.
+
+### Stage 02 migration plan
+
+Stage 01 applied Django's existing `auth` migrations and
+`common.0001_enable_pgvector` before the account model was introduced.
+Stage 02 adds `accounts.0001_initial`, dependent on
+`auth.0012_alter_user_first_name_max_length`, to create `accounts_user`
+and `accounts_emailverificationtoken`. It does not edit or replace any
+existing migration or move rows. An existing Stage 01 database retains
+its legacy `auth_user` table unchanged; a clean database migrated with
+`AUTH_USER_MODEL` already configured does not create that legacy table.
+Verify the additive migration on both a separately created empty
+database and the existing local database without clearing data or
+volumes. Future user relations must refer to
+`settings.AUTH_USER_MODEL`.
+
+Account deactivation/deletion and password reset remain open decisions
+and are outside Stage 02.
 
 ## 3. Projects and membership
 
