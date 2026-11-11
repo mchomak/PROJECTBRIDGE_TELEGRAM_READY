@@ -57,13 +57,31 @@ Generated types belong under the shared API area, for example
 
 ## 4. Authentication and local origin
 
-The browser application uses Django session authentication.
+The browser application uses Django session authentication. The browser
+automatically sends the HttpOnly session cookie; frontend code does not
+read or write session credentials in `localStorage`.
 
 During local development, configure the Vite development server to proxy
 `/api/` and `/ws/` to the backend. This keeps browser requests on one
-origin and simplifies cookie and CSRF handling.
+origin and simplifies cookie and CSRF handling. The shared API client
+uses same-origin credentials. Before each state-changing request, it
+reads the CSRF cookie or requests `/api/v1/auth/csrf/` to establish CSRF
+context, then sends the token in `X-CSRFToken`.
 
-Production must use HTTPS and correctly configured secure cookies.
+Production must use HTTPS and correctly configured secure cookies. The
+CSRF cookie is readable by the browser client; the session cookie remains
+HttpOnly.
+
+Authentication pages use `/login`, `/register`, `/verify-email`, and
+`/verification-required`. Email verification links carry their token in
+the URL fragment; the verification page reads it once, removes it from
+the address bar, and submits it through the API.
+
+The protected `/app` route loads the current user from `/api/v1/auth/me/`.
+A `401` clears the cached user and redirects to `/login`. Network and
+server failures remain visible with a retry action rather than being
+treated as logout. An authenticated but unverified user is redirected to
+`/verification-required`; only verified users enter `/app`.
 
 ## 5. Server state and local state
 
