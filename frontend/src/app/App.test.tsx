@@ -66,6 +66,13 @@ test('successful login loads the authenticated account without storing credentia
       });
     }
 
+    if (String(input) === '/api/v1/projects/?page=1') {
+      return new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     expect(String(input)).toBe('/api/v1/auth/me/');
     return new Response(JSON.stringify(user), {
       status: 200,
@@ -84,8 +91,8 @@ test('successful login loads the authenticated account without storing credentia
   });
   fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
-  expect(await screen.findByRole('heading', { name: 'Your account' })).toBeTruthy();
-  expect(screen.getByText('Signed in as verified@example.com')).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+  expect(screen.getByText('verified@example.com')).toBeTruthy();
   expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/v1/auth/login/')).toBe(
     true,
   );
@@ -291,6 +298,13 @@ test('logout returns to login and a later protected visit fetches the session ag
       );
     }
 
+    if (String(input) === '/api/v1/projects/?page=1') {
+      return new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     expect(String(input)).toBe('/api/v1/auth/logout/');
     expect(init?.method).toBe('POST');
     expect(new Headers(init?.headers).get('X-CSRFToken')).toBe('csrf-token-value');
@@ -299,7 +313,7 @@ test('logout returns to login and a later protected visit fetches the session ag
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  expect(await screen.findByRole('heading', { name: 'Your account' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
   expect(await screen.findByRole('heading', { name: 'Log in' })).toBeTruthy();
   expect(window.location.pathname).toBe('/login');
@@ -545,29 +559,40 @@ test('temporary API failures remain retryable instead of redirecting to login', 
       }),
       { status: 503, headers: { 'Content-Type': 'application/json' } },
     );
-  const fetchMock = vi.fn().mockImplementation(unavailable);
+  let accountAttempts = 0;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === '/api/v1/auth/me/') {
+      accountAttempts += 1;
+      if (accountAttempts <= 3) return unavailable();
+      return new Response(
+        JSON.stringify({
+          id: 'c6d93bb6-8449-49b5-98cc-dc65f4ba78ab',
+          email: 'verified@example.com',
+          first_name: '',
+          last_name: '',
+          email_verified: true,
+          email_verified_at: '2026-11-11T00:00:00Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    if (String(input) === '/api/v1/projects/?page=1') {
+      return new Response(JSON.stringify({ count: 0, next: null, previous: null, results: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return unavailable();
+  });
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
   expect(await screen.findByRole('button', { name: 'Try again' }, { timeout: 4000 })).toBeTruthy();
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(accountAttempts).toBe(3);
   expect(window.location.pathname).toBe('/app');
 
-  fetchMock.mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        id: 'c6d93bb6-8449-49b5-98cc-dc65f4ba78ab',
-        email: 'verified@example.com',
-        first_name: '',
-        last_name: '',
-        email_verified: true,
-        email_verified_at: '2026-11-11T00:00:00Z',
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    ),
-  );
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
-  expect(await screen.findByRole('heading', { name: 'Your account' })).toBeTruthy();
-  expect(fetchMock).toHaveBeenCalledTimes(4);
+  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+  expect(accountAttempts).toBe(4);
 });

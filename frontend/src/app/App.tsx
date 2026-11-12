@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { currentUserQueryKey, useCurrentUser, type User } from '../entities/user';
-import { useLogout } from '../features/auth';
 import { LoginPage, RegisterPage, VerificationRequiredPage, VerifyEmailPage } from '../pages/auth';
 import { HomePage } from '../pages/home';
 import { NotFoundPage } from '../pages/not-found';
+import { ProjectCreatePage, ProjectListPage, ProjectOverviewPage } from '../pages/projects';
+import { WorkspaceShell } from '../widgets/workspace-shell';
 import { ApiError } from '../shared/api';
 
 function ProtectedAppPage() {
@@ -53,26 +54,10 @@ function ProtectedAppPage() {
 }
 
 function AuthenticatedPage({ user }: { user: User }) {
-  const navigate = useNavigate();
-  const logout = useLogout();
-
-  function submitLogout() {
-    logout.mutate(undefined, {
-      onSuccess: () => navigate('/login', { replace: true }),
-    });
-  }
-
   return (
-    <main>
-      <section aria-labelledby="account-title">
-        <h1 id="account-title">Your account</h1>
-        <p>Signed in as {user.email}</p>
-        <button disabled={logout.isPending} onClick={submitLogout} type="button">
-          {logout.isPending ? 'Logging out…' : 'Log out'}
-        </button>
-        {logout.error && <p role="alert">{logout.error.message}</p>}
-      </section>
-    </main>
+    <WorkspaceShell user={user}>
+      <Outlet context={user} />
+    </WorkspaceShell>
   );
 }
 
@@ -87,7 +72,13 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/app" element={<ProtectedAppPage />} />
+          <Route path="/app" element={<ProtectedAppPage />}>
+            <Route index element={<Navigate to="projects" replace />} />
+            <Route path="projects" element={<ProjectListPage />} />
+            <Route path="projects/archive" element={<ProjectListPage archived />} />
+            <Route path="projects/new" element={<ProjectCreatePage />} />
+            <Route path="projects/:projectId" element={<ProjectOverviewPage />} />
+          </Route>
           <Route path="/verification-required" element={<VerificationRequiredPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
