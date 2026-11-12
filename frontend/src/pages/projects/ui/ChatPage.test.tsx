@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
+import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { User } from '../../../entities/user';
 import { ChatPage } from './ChatPage';
@@ -392,4 +392,140 @@ test('shows an empty message state and disables sending for a completed project'
     screen.getByText('This project is completed; the chat history is read only.'),
   ).toBeTruthy();
   expect(screen.queryByRole('textbox', { name: /Message/ })).toBeNull();
+});
+
+test('keeps a WebSocket-confirmed send as sent when the REST response fails', async () => {
+  let failRequest: ((response: Response) => void) | undefined;
+  let submitted: { client_message_id: string; content: string } | undefined;
+  const baseFetch = chatFetch();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/messages/') && init?.method === 'POST') {
+      submitted = JSON.parse(String(init.body)) as { client_message_id: string; content: string };
+      return new Promise<Response>((resolve) => {
+        failRequest = resolve;
+      });
+    }
+    return baseFetch(input, init);
+  });
+  renderChatPage(fetchMock);
+  const composer = await screen.findByRole('textbox', { name: /Message/ });
+  fireEvent.change(composer, { target: { value: 'Already delivered' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(submitted).toBeDefined());
+  act(() =>
+    MockWebSocket.instances[0].receive({
+      type: 'message.created',
+      message: message({
+        id: newerMessageId,
+        sender_id: executorId,
+        content: 'Already delivered',
+        client_message_id: submitted?.client_message_id,
+      }),
+    }),
+  );
+  act(() => failRequest?.(jsonResponse({ detail: 'Network error' }, 500)));
+  await waitFor(() => expect(screen.getByText('Sent')).toBeTruthy());
+  expect((composer as HTMLTextAreaElement).value).toBe('');
+  expect(screen.queryByRole('button', { name: 'Retry message' })).toBeNull();
+});
+
+test('keeps distinct messages when participants use the same client message ID', async () => {
+  const clientId = 'd43a3fed-a38d-4642-9c79-9a1c2f92dbce';
+  const fetchMock = chatFetch(undefined, {
+    results: [
+      message({ sender_id: executorId, content: 'My message', client_message_id: clientId }),
+    ],
+  });
+  renderChatPage(fetchMock);
+  expect(await screen.findByText('My message')).toBeTruthy();
+  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+  act(() =>
+    MockWebSocket.instances[0].receive({
+      type: 'message.created',
+      message: message({
+        id: newerMessageId,
+        sender_id: customerId,
+        content: 'Customer message',
+        client_message_id: clientId,
+      }),
+    }),
+  );
+  expect(await screen.findByText('Customer message')).toBeTruthy();
+  expect(screen.getByText('My message')).toBeTruthy();
+});
+
+test('does not carry live messages or draft text into another project chat', async () => {
+  const otherProjectId = '9b66d97b-73c7-48db-8a99-a6b56395177d';
+  const baseFetch = chatFetch();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === `/api/v1/projects/${otherProjectId}/`) {
+      return jsonResponse({
+        id: otherProjectId,
+        name: 'Other project',
+        project_type: 'other',
+        status: 'active',
+      });
+    }
+    return baseFetch(url.replace(otherProjectId, projectId), init);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/app/projects/${projectId}/chat`]}>
+        <Link to={`/app/projects/${otherProjectId}/chat`}>Other chat</Link>
+        <Routes>
+          <Route element={<Outlet context={executor} />}>
+            <Route path="/app/projects/:projectId/chat" element={<ChatPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const composer = await screen.findByRole('textbox', { name: /Message/ });
+  fireEvent.change(composer, { target: { value: 'Private draft' } });
+  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+  act(() =>
+    MockWebSocket.instances[0].receive({
+      type: 'message.created',
+      message: message({ content: 'Previous project message' }),
+    }),
+  );
+  expect(await screen.findByText('Previous project message')).toBeTruthy();
+  fireEvent.click(screen.getByRole('link', { name: 'Other chat' }));
+  expect(await screen.findByRole('heading', { name: 'Other project' })).toBeTruthy();
+  expect(screen.queryByText('Previous project message')).toBeNull();
+  expect((screen.getByRole('textbox', { name: /Message/ }) as HTMLTextAreaElement).value).toBe('');
+});
+
+test('REST history confirms a failed send and preserves a subsequently edited draft', async () => {
+  let saved: ReturnType<typeof message> | undefined;
+  const baseFetch = chatFetch();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/messages/') && init?.method === 'POST') {
+      const payload = JSON.parse(String(init.body)) as {
+        client_message_id: string;
+        content: string;
+      };
+      saved = message({ id: newerMessageId, sender_id: executorId, ...payload });
+      return jsonResponse({ detail: 'Response lost' }, 500);
+    }
+    if (url.includes('/messages/?') && saved) {
+      return jsonResponse({ next: null, previous: null, results: [saved] });
+    }
+    return baseFetch(input, init);
+  });
+  renderChatPage(fetchMock);
+  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  fireEvent.change(composer, { target: { value: 'Saved but response lost' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  fireEvent.change(composer, { target: { value: 'A new draft' } });
+  act(() => MockWebSocket.instances[0].close(1006));
+  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry message' })).toBeNull());
+  expect(screen.getByText('Sent')).toBeTruthy();
+  expect(composer.value).toBe('A new draft');
 });

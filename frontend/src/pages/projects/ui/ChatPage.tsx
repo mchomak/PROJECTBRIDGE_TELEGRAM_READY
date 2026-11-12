@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
 import { useProject, useProjectMembers, type ProjectMember } from '../../../entities/project';
 import {
@@ -55,12 +55,18 @@ function messageFromEvent(data: string, projectId: string): ChatMessage | null {
 
 export function ChatPage() {
   const { projectId = '' } = useParams();
+  return <ProjectChat key={projectId} projectId={projectId} />;
+}
+
+function ProjectChat({ projectId }: { projectId: string }) {
   const user = useOutletContext<User>();
   const projectQuery = useProject(projectId);
   const membersQuery = useProjectMembers(projectId);
   const historyQuery = useProjectMessages(projectId);
   const sendMessage = useSendProjectMessage(projectId);
   const [draft, setDraft] = useState('');
+  const draftRevision = useRef(0);
+  const pendingDraftRevisions = useRef(new Map<string, number>());
   const [localMessages, setLocalMessages] = useState<ChatEntry[]>([]);
 
   const project = projectQuery.data;
@@ -70,6 +76,21 @@ export function ChatPage() {
   const historyRefetch = useRef(historyQuery.refetch);
   historyRefetch.current = historyQuery.refetch;
   const canSend = project?.status === 'active';
+
+  const confirmDraft = useCallback((clientMessageId: string) => {
+    const revision = pendingDraftRevisions.current.get(clientMessageId);
+    if (revision === undefined) return;
+    pendingDraftRevisions.current.delete(clientMessageId);
+    if (revision === draftRevision.current) setDraft('');
+  }, []);
+
+  useEffect(() => {
+    for (const page of historyQuery.data?.pages ?? []) {
+      for (const message of page.results) {
+        if (message.sender_id === user.id) confirmDraft(message.client_message_id);
+      }
+    }
+  }, [historyQuery.data, user.id, confirmDraft]);
 
   useEffect(() => {
     if (!projectId || !hasActiveMembership) return;
@@ -93,6 +114,7 @@ export function ChatPage() {
       nextSocket.onmessage = (event) => {
         const message = messageFromEvent(event.data, projectId);
         if (!message) return;
+        if (message.sender_id === user.id) confirmDraft(message.client_message_id);
         setLocalMessages((current) => {
           const existingIndex = current.findIndex(
             (entry) =>
@@ -119,7 +141,7 @@ export function ChatPage() {
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [hasActiveMembership, projectId]);
+  }, [hasActiveMembership, projectId, user.id, confirmDraft]);
 
   function retryPage() {
     void Promise.all([projectQuery.refetch(), membersQuery.refetch(), historyQuery.refetch()]);
@@ -133,9 +155,14 @@ export function ChatPage() {
       content,
     };
     const timestamp = new Date().toISOString();
+    if (!pendingDraftRevisions.current.has(clientMessageId)) {
+      pendingDraftRevisions.current.set(clientMessageId, draftRevision.current);
+    }
 
     setLocalMessages((current) => {
-      const existing = current.find((message) => message.client_message_id === clientMessageId);
+      const existing = current.find(
+        (message) => message.sender_id === user.id && message.client_message_id === clientMessageId,
+      );
       const pending: ChatEntry = {
         id: existing?.id ?? `pending:${clientMessageId}`,
         project_id: projectId,
@@ -149,7 +176,9 @@ export function ChatPage() {
       };
       return existing
         ? current.map((message) =>
-            message.client_message_id === clientMessageId ? pending : message,
+            message.sender_id === user.id && message.client_message_id === clientMessageId
+              ? pending
+              : message,
           )
         : [...current, pending];
     });
@@ -157,16 +186,18 @@ export function ChatPage() {
       const saved = await sendMessage.mutateAsync(payload);
       setLocalMessages((current) =>
         current.map((message) =>
-          message.client_message_id === clientMessageId
+          message.sender_id === user.id && message.client_message_id === clientMessageId
             ? { ...saved, delivery_state: 'sent' }
             : message,
         ),
       );
-      setDraft((current) => (current.trim() === content ? '' : current));
+      confirmDraft(clientMessageId);
     } catch (error) {
       setLocalMessages((current) =>
         current.map((message) =>
-          message.client_message_id === clientMessageId
+          message.sender_id === user.id &&
+          message.client_message_id === clientMessageId &&
+          message.delivery_state !== 'sent'
             ? {
                 ...message,
                 delivery_state: 'failed',
@@ -242,14 +273,13 @@ export function ChatPage() {
   for (const localMessage of localMessages) {
     const savedMessage = serverMessages.find(
       (message) =>
-        message.sender_id === user.id &&
+        message.sender_id === localMessage.sender_id &&
         message.client_message_id === localMessage.client_message_id,
     );
-    entriesById.set(savedMessage?.id ?? localMessage.id, {
-      ...(savedMessage ?? localMessage),
-      ...localMessage,
-      ...(savedMessage ? { id: savedMessage.id, created_at: savedMessage.created_at } : {}),
-    });
+    entriesById.set(
+      savedMessage?.id ?? localMessage.id,
+      savedMessage ? { ...savedMessage, delivery_state: 'sent' } : localMessage,
+    );
   }
   const messages = [...entriesById.values()].sort((first, second) => {
     const timeDifference = Date.parse(first.created_at) - Date.parse(second.created_at);
@@ -357,7 +387,10 @@ export function ChatPage() {
               <textarea
                 id="chat-message-input"
                 maxLength={10_000}
-                onChange={(event) => setDraft(event.currentTarget.value)}
+                onChange={(event) => {
+                  draftRevision.current += 1;
+                  setDraft(event.currentTarget.value);
+                }}
                 placeholder="Write a message"
                 rows={3}
                 value={draft}
