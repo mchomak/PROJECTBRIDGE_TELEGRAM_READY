@@ -28,6 +28,18 @@ class ProjectStateConflictError(Exception):
     """The project state does not allow the requested metadata mutation."""
 
 
+class ProjectInvitationUnavailableError(Exception):
+    """The project lifecycle does not allow invitation acceptance."""
+
+    def __init__(self, *, project_status):
+        super().__init__(project_status)
+        self.project_status = project_status
+
+
+class ProjectCustomerAlreadyExistsError(Exception):
+    """A different user already occupies the active customer role."""
+
+
 class ProjectPassportVersionConflictError(Exception):
     """The passport version changed before the requested update could apply."""
 
@@ -163,6 +175,70 @@ def _get_executor_project_for_update(*, project_id, actor) -> Project:
 def get_project_for_invitation_update(*, project_id, actor) -> Project:
     """Return the executor's locked project for an invitation mutation."""
     return _get_executor_project_for_update(project_id=project_id, actor=actor)
+
+
+def add_customer_member_from_invitation(*, project_id, user) -> ProjectMember:
+    """Join the invited customer and activate a draft project atomically."""
+    if user.email_verified_at is None:
+        raise ProjectPermissionError
+
+    with transaction.atomic():
+        try:
+            project = Project.objects.select_for_update().get(pk=project_id)
+        except Project.DoesNotExist as exc:
+            raise ProjectNotFoundError from exc
+
+        if project.status not in {ProjectStatus.DRAFT, ProjectStatus.ACTIVE}:
+            raise ProjectInvitationUnavailableError(project_status=project.status)
+
+        active_customer = (
+            ProjectMember.objects.select_for_update()
+            .filter(
+                project=project,
+                role=ProjectMemberRole.CUSTOMER,
+                status=ProjectMemberStatus.ACTIVE,
+            )
+            .first()
+        )
+        if active_customer is not None and active_customer.user_id != user.pk:
+            raise ProjectCustomerAlreadyExistsError
+
+        membership = (
+            ProjectMember.objects.select_for_update()
+            .filter(project=project, user=user)
+            .first()
+        )
+        if membership is None:
+            membership = ProjectMember.objects.create(
+                project=project,
+                user=user,
+                role=ProjectMemberRole.CUSTOMER,
+                status=ProjectMemberStatus.ACTIVE,
+            )
+        elif membership.role != ProjectMemberRole.CUSTOMER:
+            raise ProjectCustomerAlreadyExistsError
+        elif membership.status != ProjectMemberStatus.ACTIVE:
+            membership.status = ProjectMemberStatus.ACTIVE
+            membership.save(update_fields=("status",))
+
+        previous_status = project.status
+        if previous_status == ProjectStatus.DRAFT:
+            project.status = ProjectStatus.ACTIVE
+            project.save(update_fields=("status", "updated_at"))
+        if previous_status == ProjectStatus.DRAFT or active_customer is None:
+            record_project_action(
+                project_id=project.pk,
+                actor_id=user.pk,
+                action="project.customer_joined",
+                target_type="project_member",
+                target_id=membership.pk,
+                metadata={
+                    "from_status": previous_status,
+                    "to_status": project.status,
+                },
+            )
+
+    return membership
 
 
 def _transition_project(

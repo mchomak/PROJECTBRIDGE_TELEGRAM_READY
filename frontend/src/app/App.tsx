@@ -6,6 +6,7 @@ import { LoginPage, RegisterPage, VerificationRequiredPage, VerifyEmailPage } fr
 import { HomePage } from '../pages/home';
 import { NotFoundPage } from '../pages/not-found';
 import { ProjectCreatePage, ProjectListPage, ProjectOverviewPage } from '../pages/projects';
+import { InvitationPage } from '../pages/invitations';
 import { WorkspaceShell } from '../widgets/workspace-shell';
 import { ApiError } from '../shared/api';
 
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/invite/" element={<InvitationPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/app" element={<ProtectedAppPage />}>
             <Route index element={<Navigate to="projects" replace />} />

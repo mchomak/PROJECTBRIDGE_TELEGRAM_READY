@@ -127,6 +127,16 @@ storage.
   30/hour/IP, and acceptance 10/hour/user.
 - Do not reveal unnecessary project information before the invitation is
   validated.
+- Public preview returns only the project name, a masked invited-email
+  hint, expiry, and invitation status. Unknown tokens use a generic
+  `404`; expired/revoked links use `410`; completed/archived projects use
+  distinct `409` states. Email mismatch and unverified accounts return
+  `403` without echoing the full invited address.
+- The browser reads the raw token from the email-link fragment, removes
+  the fragment before making API requests, and sends the token only in
+  preview/acceptance POST bodies. Keep it in page memory only; do not put
+  it in query parameters, local storage, session storage, API responses,
+  database fields, or logs. Persist only its SHA-256 hash server-side.
 
 ## 6. API and WebSocket authorization
 

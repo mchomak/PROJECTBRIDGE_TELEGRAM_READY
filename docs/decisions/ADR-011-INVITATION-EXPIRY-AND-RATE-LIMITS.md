@@ -24,6 +24,21 @@ limits so the email-bound workflow can be implemented consistently.
 - Invitation create and revoke operations are executor-only and require
   project status `draft` or `active`; invitation listing remains
   available to the executor in every project status.
+- Public preview returns only a project name, masked email hint,
+  expiration, and invitation status. Unknown tokens return a generic
+  `404`; expired or revoked invitations return `410`; completed or
+  archived projects return separate `409` codes. Email mismatch and
+  unverified accounts return `403`; rate-limit failures return `429`.
+- The browser reads the raw token from the email-link fragment, removes
+  it from the address bar, and sends it only in preview/acceptance POST
+  bodies. It remains in transient page memory only; the database stores
+  only the hash.
+- Acceptance requires an authenticated account with the matching
+  normalized verified email. Membership creation, draft activation,
+  invitation acceptance, and their audit rows are one transaction.
+  Replaying the same accepted invitation by the same user returns the
+  original result without duplicate writes; an active project stays
+  active and a competing customer is rejected with `409`.
 
 ## Consequences
 

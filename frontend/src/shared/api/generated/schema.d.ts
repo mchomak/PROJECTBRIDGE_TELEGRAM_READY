@@ -150,6 +150,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invitations/accept/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["invitation_accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["invitation_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/": {
         parameters: {
             query?: never;
@@ -349,6 +381,18 @@ export interface components {
          * @enum {string}
          */
         HealthResponseStatusEnum: "ok" | "unavailable";
+        InvitationAcceptanceResponse: {
+            /** Format: uuid */
+            invitation_id: string;
+            /** Format: uuid */
+            project_id: string;
+            status: components["schemas"]["InvitationAcceptanceResponseStatusEnum"];
+        };
+        /**
+         * @description * `accepted` - accepted
+         * @enum {string}
+         */
+        InvitationAcceptanceResponseStatusEnum: "accepted";
         InvitationCreate: {
             /** Format: email */
             invited_email: string;
@@ -361,6 +405,16 @@ export interface components {
             previous: string | null;
             results: components["schemas"]["InvitationResponse"][];
         };
+        InvitationPreviewRequest: {
+            token: string;
+        };
+        InvitationPreviewResponse: {
+            project_name: string;
+            email_hint: string;
+            /** Format: date-time */
+            expires_at: string;
+            status: components["schemas"]["Status810Enum"];
+        };
         InvitationResponse: {
             /** Format: uuid */
             readonly id: string;
@@ -368,7 +422,7 @@ export interface components {
             readonly project_id: string;
             /** Format: email */
             readonly invited_email: string;
-            readonly status: components["schemas"]["InvitationResponseStatusEnum"];
+            readonly status: components["schemas"]["Status810Enum"];
             /** Format: date-time */
             readonly expires_at: string;
             /** Format: date-time */
@@ -378,14 +432,6 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
-        /**
-         * @description * `pending` - Pending
-         *     * `accepted` - Accepted
-         *     * `revoked` - Revoked
-         *     * `expired` - Expired
-         * @enum {string}
-         */
-        InvitationResponseStatusEnum: "pending" | "accepted" | "revoked" | "expired";
         PatchedProjectMetadataUpdate: {
             name?: string;
             project_type?: components["schemas"]["ProjectTypeEnum"];
@@ -509,6 +555,14 @@ export interface components {
          * @enum {string}
          */
         RoleEnum: "executor" | "customer";
+        /**
+         * @description * `pending` - Pending
+         *     * `accepted` - Accepted
+         *     * `revoked` - Revoked
+         *     * `expired` - Expired
+         * @enum {string}
+         */
+        Status810Enum: "pending" | "accepted" | "revoked" | "expired";
         UserSummary: {
             /** Format: uuid */
             readonly id: string;
@@ -879,6 +933,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    invitation_accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationPreviewRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvitationPreviewRequest"];
+                "multipart/form-data": components["schemas"]["InvitationPreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAcceptanceResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    invitation_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationPreviewRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvitationPreviewRequest"];
+                "multipart/form-data": components["schemas"]["InvitationPreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreviewResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

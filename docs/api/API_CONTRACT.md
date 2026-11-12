@@ -197,6 +197,36 @@ Invitations may be accepted only while a project is `draft` or `active`.
 Accepting an invitation for a `draft` project atomically adds the customer
 membership and moves the project to `active`.
 
+Preview accepts `{ "token": "<raw-token>" }` and returns only
+`project_name`, a masked `email_hint`, `expires_at`, and invitation
+`status`; it does not return the project description or member list.
+Acceptance accepts the same token body and returns
+`{ "invitation_id": "<uuid>", "project_id": "<uuid>",
+"status": "accepted" }`. The browser reads the token from the email-link
+fragment, removes the fragment from the address bar, and sends the token
+only in the preview and acceptance request bodies. It is not stored in
+browser local or session storage.
+
+The public preview is limited to 30 requests per client IP per UTC hour;
+acceptance is limited to 10 requests per authenticated user per UTC hour
+through the shared Redis cache. Unknown tokens return `404` with the
+generic `not_found` code. Known expired and revoked invitations return
+`410` with `invitation_expired` or `invitation_revoked`; a project that
+is completed or archived returns `409` with `project_completed` or
+`project_archived`. An unverified account or an account whose normalized
+verified email does not match the invitation returns `403` with
+`email_unverified` or `email_mismatch`. Exceeding a limit returns `429`
+with the common error envelope. These failures do not include the full
+invited email or project details for unknown tokens.
+
+Acceptance requires a verified account whose normalized email matches
+the invitation. The customer membership, `draft`-to-`active` transition,
+accepted invitation state, and their audit records commit in one
+transaction. An already-active project stays active. Repeating an
+acceptance by the user who accepted it returns the same result without a
+duplicate membership or audit record; a second active customer returns
+`409` without partial changes.
+
 ## 8. Questionnaire — `questionnaire`
 
 | Method | Endpoint                                                                | Permission                    | Purpose                                      |

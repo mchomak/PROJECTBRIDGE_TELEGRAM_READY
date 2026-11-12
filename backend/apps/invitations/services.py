@@ -21,8 +21,11 @@ from apps.projects.selectors import (
     has_active_customer_membership,
 )
 from apps.projects.services import (
+    ProjectCustomerAlreadyExistsError,
+    ProjectInvitationUnavailableError,
     ProjectNotFoundError,
     ProjectPermissionError,
+    add_customer_member_from_invitation,
     get_project_for_invitation_update,
 )
 
@@ -31,6 +34,8 @@ from .models import ProjectInvitation, ProjectInvitationStatus
 INVITATION_EXPIRY = timedelta(days=7)
 INVITATION_CREATE_LIMIT = 20
 INVITATION_CREATE_WINDOW_SECONDS = 60 * 60
+INVITATION_PREVIEW_LIMIT = 30
+INVITATION_ACCEPT_LIMIT = 10
 
 
 class InvitationNotFoundError(Exception):
@@ -46,7 +51,25 @@ class InvitationStateConflictError(Exception):
 
 
 class InvitationRateLimitError(Exception):
-    """The executor exceeded the invitation creation limit."""
+    """The invitation request exceeded its rate limit."""
+
+
+class InvitationUnavailableError(Exception):
+    """A known invitation cannot be used in its current state."""
+
+    def __init__(self, *, code, detail, status_code=410):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.status_code = status_code
+
+
+class InvitationEmailMismatchError(Exception):
+    """The actor does not own the email address invited to the project."""
+
+
+class InvitationEmailUnverifiedError(Exception):
+    """The actor has not verified their account email address."""
 
 
 def _get_executor_project_for_read(*, project_id, actor):
@@ -89,6 +112,234 @@ def _enforce_create_limit(*, actor_id, now):
 
     if count > INVITATION_CREATE_LIMIT:
         raise InvitationRateLimitError
+
+
+def _enforce_rate_limit(*, scope, identity, limit, now):
+    hour_bucket = int(now.timestamp()) // INVITATION_CREATE_WINDOW_SECONDS
+    cache_key = f"projectbridge:invitation:{scope}:{identity}:{hour_bucket}"
+    remaining_seconds = INVITATION_CREATE_WINDOW_SECONDS - (
+        int(now.timestamp()) % INVITATION_CREATE_WINDOW_SECONDS
+    )
+
+    if cache.add(cache_key, 1, timeout=remaining_seconds):
+        return
+
+    try:
+        count = cache.incr(cache_key)
+    except ValueError:
+        if cache.add(cache_key, 1, timeout=remaining_seconds):
+            return
+        count = cache.incr(cache_key)
+
+    if count > limit:
+        raise InvitationRateLimitError
+
+
+def enforce_invitation_preview_limit(*, client_ip):
+    _enforce_rate_limit(
+        scope="preview",
+        identity=client_ip or "unknown",
+        limit=INVITATION_PREVIEW_LIMIT,
+        now=timezone.now(),
+    )
+
+
+def _enforce_accept_limit(*, actor_id, now):
+    _enforce_rate_limit(
+        scope="accept",
+        identity=actor_id,
+        limit=INVITATION_ACCEPT_LIMIT,
+        now=now,
+    )
+
+
+def _mask_invited_email(invited_email):
+    local_part, domain = invited_email.rsplit("@", maxsplit=1)
+    return f"{local_part[:1]}***@{domain}"
+
+
+def preview_invitation(raw_token):
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    invitation = (
+        ProjectInvitation.objects.select_related("project")
+        .filter(token_hash=token_hash)
+        .first()
+    )
+    if invitation is None:
+        raise InvitationNotFoundError
+
+    now = timezone.now()
+    if (
+        invitation.status == ProjectInvitationStatus.PENDING
+        and invitation.expires_at <= now
+    ):
+        ProjectInvitation.objects.filter(
+            pk=invitation.pk,
+            status=ProjectInvitationStatus.PENDING,
+        ).update(status=ProjectInvitationStatus.EXPIRED, updated_at=now)
+        raise InvitationUnavailableError(
+            code="invitation_expired",
+            detail="This invitation has expired.",
+        )
+    if invitation.status == ProjectInvitationStatus.EXPIRED:
+        raise InvitationUnavailableError(
+            code="invitation_expired",
+            detail="This invitation has expired.",
+        )
+    if invitation.status == ProjectInvitationStatus.REVOKED:
+        raise InvitationUnavailableError(
+            code="invitation_revoked",
+            detail="This invitation has been revoked.",
+        )
+    if invitation.status == ProjectInvitationStatus.ACCEPTED:
+        return {
+            "project_name": invitation.project.name,
+            "email_hint": _mask_invited_email(invitation.invited_email),
+            "expires_at": invitation.expires_at,
+            "status": invitation.status,
+        }
+    if invitation.project.status == ProjectStatus.COMPLETED:
+        raise InvitationUnavailableError(
+            code="project_completed",
+            detail="This project no longer accepts invitations.",
+            status_code=409,
+        )
+    if invitation.project.status == ProjectStatus.ARCHIVED:
+        raise InvitationUnavailableError(
+            code="project_archived",
+            detail="This project no longer accepts invitations.",
+            status_code=409,
+        )
+
+    return {
+        "project_name": invitation.project.name,
+        "email_hint": _mask_invited_email(invitation.invited_email),
+        "expires_at": invitation.expires_at,
+        "status": invitation.status,
+    }
+
+
+def _raise_invitation_unavailable_for_project_status(project_status):
+    if project_status == ProjectStatus.COMPLETED:
+        raise InvitationUnavailableError(
+            code="project_completed",
+            detail="This project no longer accepts invitations.",
+            status_code=409,
+        )
+    if project_status == ProjectStatus.ARCHIVED:
+        raise InvitationUnavailableError(
+            code="project_archived",
+            detail="This project no longer accepts invitations.",
+            status_code=409,
+        )
+
+
+def accept_invitation(*, actor, raw_token):
+    now = timezone.now()
+    _enforce_accept_limit(actor_id=str(actor.pk), now=now)
+
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    invitation = (
+        ProjectInvitation.objects.select_related("project")
+        .filter(token_hash=token_hash)
+        .first()
+    )
+    if invitation is None:
+        raise InvitationNotFoundError
+    if actor.email_verified_at is None:
+        raise InvitationEmailUnverifiedError
+    if User.objects.normalize_email(actor.email) != invitation.invited_email:
+        raise InvitationEmailMismatchError
+    if invitation.status == ProjectInvitationStatus.EXPIRED:
+        raise InvitationUnavailableError(
+            code="invitation_expired",
+            detail="This invitation has expired.",
+        )
+    if invitation.status == ProjectInvitationStatus.REVOKED:
+        raise InvitationUnavailableError(
+            code="invitation_revoked",
+            detail="This invitation has been revoked.",
+        )
+    if invitation.status == ProjectInvitationStatus.ACCEPTED:
+        if invitation.accepted_by_id == actor.pk:
+            return invitation
+        raise InvitationStateConflictError
+    if invitation.expires_at <= now:
+        ProjectInvitation.objects.filter(
+            pk=invitation.pk,
+            status=ProjectInvitationStatus.PENDING,
+        ).update(status=ProjectInvitationStatus.EXPIRED, updated_at=now)
+        raise InvitationUnavailableError(
+            code="invitation_expired",
+            detail="This invitation has expired.",
+        )
+
+    try:
+        with transaction.atomic():
+            add_customer_member_from_invitation(
+                project_id=invitation.project_id,
+                user=actor,
+            )
+            accepted_at = timezone.now()
+            updated_count = ProjectInvitation.objects.filter(
+                pk=invitation.pk,
+                status=ProjectInvitationStatus.PENDING,
+                expires_at__gt=accepted_at,
+            ).update(
+                status=ProjectInvitationStatus.ACCEPTED,
+                accepted_by=actor,
+                accepted_at=accepted_at,
+                updated_at=accepted_at,
+            )
+            if updated_count != 1:
+                invitation.refresh_from_db()
+                if (
+                    invitation.status == ProjectInvitationStatus.ACCEPTED
+                    and invitation.accepted_by_id == actor.pk
+                ):
+                    return invitation
+                if (
+                    invitation.status == ProjectInvitationStatus.PENDING
+                    and invitation.expires_at <= accepted_at
+                ):
+                    raise InvitationUnavailableError(
+                        code="invitation_expired",
+                        detail="This invitation has expired.",
+                    )
+                if invitation.status == ProjectInvitationStatus.EXPIRED:
+                    raise InvitationUnavailableError(
+                        code="invitation_expired",
+                        detail="This invitation has expired.",
+                    )
+                if invitation.status == ProjectInvitationStatus.REVOKED:
+                    raise InvitationUnavailableError(
+                        code="invitation_revoked",
+                        detail="This invitation has been revoked.",
+                    )
+                raise InvitationStateConflictError
+
+            invitation.status = ProjectInvitationStatus.ACCEPTED
+            invitation.accepted_by = actor
+            invitation.accepted_at = accepted_at
+            record_project_action(
+                project_id=invitation.project_id,
+                actor_id=actor.pk,
+                action="project.invitation_accepted",
+                target_type="project_invitation",
+                target_id=invitation.pk,
+                metadata={},
+            )
+    except ProjectCustomerAlreadyExistsError as exc:
+        raise InvitationStateConflictError from exc
+    except ProjectInvitationUnavailableError as exc:
+        _raise_invitation_unavailable_for_project_status(exc.project_status)
+        raise InvitationStateConflictError from exc
+    except ProjectNotFoundError as exc:
+        raise InvitationNotFoundError from exc
+    except ProjectPermissionError as exc:
+        raise InvitationEmailUnverifiedError from exc
+
+    return invitation
 
 
 def _send_invitation_email(*, invitation, project, raw_token):

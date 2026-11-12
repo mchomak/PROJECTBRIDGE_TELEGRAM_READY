@@ -461,3 +461,40 @@ def test_lifecycle_transition_rolls_back_when_audit_write_fails(monkeypatch):
     assert project.status == "draft"
     assert project.status_before_archive is None
     assert project.archived_at is None
+
+
+@pytest.mark.django_db
+def test_invitation_service_adds_customer_and_activates_draft_atomically():
+    from django.utils import timezone
+
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.services import (
+        add_customer_member_from_invitation,
+        create_project,
+    )
+
+    executor = get_user_model().objects.create_user(email="invite-owner@example.com")
+    customer = get_user_model().objects.create_user(
+        email="invite-customer@example.com",
+        email_verified_at=timezone.now(),
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Invitation acceptance", "project_type": "website"},
+    )
+
+    membership = add_customer_member_from_invitation(
+        project_id=project.pk,
+        user=customer,
+    )
+
+    project.refresh_from_db()
+    assert project.status == "active"
+    assert (membership.project_id, membership.user_id) == (project.pk, customer.pk)
+    assert (membership.role, membership.status) == ("customer", "active")
+    audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="project.customer_joined",
+    )
+    assert audit.target_id == str(membership.pk)
+    assert audit.metadata == {"from_status": "draft", "to_status": "active"}

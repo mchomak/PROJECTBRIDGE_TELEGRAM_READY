@@ -1,5 +1,12 @@
 import { apiJson } from '../../../shared/api';
-import type { Invitation, InvitationCreate, InvitationPage } from '../model/types';
+import type {
+  Invitation,
+  InvitationAcceptance,
+  InvitationCreate,
+  InvitationPage,
+  InvitationPreview,
+  InvitationTokenRequest,
+} from '../model/types';
 
 function invitationsPath(projectId: string): string {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/invitations/`;
@@ -29,4 +36,24 @@ export function revokeProjectInvitation(
     `${invitationsPath(projectId)}${encodeURIComponent(invitationId)}/revoke/`,
     { method: 'POST' },
   );
+}
+
+export function previewInvitation(
+  token: InvitationTokenRequest['token'],
+): Promise<InvitationPreview> {
+  return apiJson<InvitationPreview>('/api/v1/invitations/preview/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function acceptInvitation(
+  token: InvitationTokenRequest['token'],
+): Promise<InvitationAcceptance> {
+  return apiJson<InvitationAcceptance>('/api/v1/invitations/accept/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
 }
