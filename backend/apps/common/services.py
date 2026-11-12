@@ -15,11 +15,28 @@ SAFE_METADATA_KEYS = {
     "version",
     "role",
 }
+SAFE_STATUS_VALUES = {
+    *ProjectStatus.values,
+    "planned",
+    "blocked",
+    "cancelled",
+    "draft",
+    "confirmed",
+    "in_progress",
+    "rejected",
+    "todo",
+    "done",
+    "open",
+    "resolved",
+    "dismissed",
+    "unresolved",
+}
 SAFE_CHANGED_FIELDS = {
     "name",
     "description",
     "project_type",
     "status",
+    "title",
     "goal",
     "target_audience",
     "expected_result",
@@ -31,6 +48,23 @@ SAFE_CHANGED_FIELDS = {
     "budget_max",
     "currency",
     "additional_data",
+    "position",
+    "start_date",
+    "due_date",
+    "confirmed_by",
+    "confirmed_at",
+    "stage",
+    "stage_id",
+    "assignee_id",
+    "question",
+    "answer",
+    "resolution",
+    "evidence",
+    "evidence_refs",
+    "source_type",
+    "source_id",
+    "excerpt",
+    "metadata",
 }
 
 
@@ -48,7 +82,7 @@ def _validated_metadata(metadata):
                 raise ValueError("Project audit metadata contains unsupported fields.")
             safe_metadata[key] = list(value)
         elif key in {"from_status", "to_status"}:
-            if value not in ProjectStatus.values:
+            if value not in SAFE_STATUS_VALUES:
                 raise ValueError("Project audit metadata contains an invalid status.")
             safe_metadata[key] = value
         elif key == "role":

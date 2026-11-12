@@ -5,7 +5,12 @@ import { currentUserQueryKey, useCurrentUser, type User } from '../entities/user
 import { LoginPage, RegisterPage, VerificationRequiredPage, VerifyEmailPage } from '../pages/auth';
 import { HomePage } from '../pages/home';
 import { NotFoundPage } from '../pages/not-found';
-import { ProjectCreatePage, ProjectListPage, ProjectOverviewPage } from '../pages/projects';
+import {
+  ProjectCreatePage,
+  ProjectListPage,
+  ProjectOverviewPage,
+  ProjectStatePage,
+} from '../pages/projects';
 import { InvitationPage } from '../pages/invitations';
 import { QuestionnairePage } from '../pages/projects';
 import { WorkspaceShell } from '../widgets/workspace-shell';
@@ -81,6 +86,7 @@ export function App() {
             <Route path="projects/archive" element={<ProjectListPage archived />} />
             <Route path="projects/new" element={<ProjectCreatePage />} />
             <Route path="projects/:projectId" element={<ProjectOverviewPage />} />
+            <Route path="projects/:projectId/state" element={<ProjectStatePage />} />
             <Route path="projects/:projectId/questionnaire" element={<QuestionnairePage />} />
           </Route>
           <Route path="/verification-required" element={<VerificationRequiredPage />} />

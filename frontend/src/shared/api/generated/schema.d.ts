@@ -133,6 +133,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conflicts/{record_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_state_conflict_update"];
+        trace?: never;
+    };
     "/api/v1/health/": {
         parameters: {
             query?: never;
@@ -180,6 +196,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/open-questions/{record_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_state_open_question_update"];
         trace?: never;
     };
     "/api/v1/projects/": {
@@ -246,6 +278,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/conflicts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_conflicts_list"];
+        put?: never;
+        post: operations["project_state_conflicts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/evidence-options/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_evidence_options_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/invitations/": {
         parameters: {
             query?: never;
@@ -288,6 +352,22 @@ export interface paths {
         get: operations["projects_members_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/open-questions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_open_questions_list"];
+        put?: never;
+        post: operations["project_state_open_questions_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -374,6 +454,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/requirements/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_requirements_list"];
+        put?: never;
+        post: operations["project_state_requirements_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/restore/": {
         parameters: {
             query?: never;
@@ -384,6 +480,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["projects_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/stages/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_stages_list"];
+        put?: never;
+        post: operations["project_state_stages_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/state/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_aggregate_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/tasks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_state_tasks_list"];
+        put?: never;
+        post: operations["project_state_tasks_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -470,6 +614,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/requirements/{record_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_state_requirement_update"];
+        trace?: never;
+    };
+    "/api/v1/stages/{record_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_state_stage_update"];
+        trace?: never;
+    };
+    "/api/v1/tasks/{record_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_state_task_update"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -503,6 +695,52 @@ export interface components {
             /** Format: uuid */
             request_id: string;
         };
+        EvidenceOptionPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["EvidenceOptionResponse"][];
+        };
+        EvidenceOptionResponse: {
+            readonly source_type: string;
+            /** Format: uuid */
+            source_id: string;
+            question_key: string;
+            value: unknown;
+            schema_key: string;
+            schema_version: number;
+            /** Format: date-time */
+            submitted_at: string;
+        };
+        EvidenceReference: {
+            source_type: components["schemas"]["EvidenceReferenceSourceTypeEnum"];
+            /** Format: uuid */
+            source_id: string;
+        };
+        /**
+         * @description * `questionnaire_answer` - questionnaire_answer
+         * @enum {string}
+         */
+        EvidenceReferenceSourceTypeEnum: "questionnaire_answer";
+        EvidenceResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly source_type: components["schemas"]["EvidenceSourceTypeEnum"];
+            /** Format: uuid */
+            readonly source_id: string;
+            readonly excerpt: string;
+            readonly metadata: unknown;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description * `questionnaire_answer` - Questionnaire answer
+         *     * `message` - Message
+         * @enum {string}
+         */
+        EvidenceSourceTypeEnum: "questionnaire_answer" | "message";
         HealthResponse: {
             status: components["schemas"]["HealthResponseStatusEnum"];
             dependencies: {
@@ -568,22 +806,136 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
+        OpenQuestionCreate: {
+            question: string;
+            /** @default  */
+            answer: string;
+        };
+        OpenQuestionPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["OpenQuestionResponse"][];
+        };
+        OpenQuestionResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            readonly question: string;
+            readonly answer: string;
+            readonly status: components["schemas"]["OpenQuestionStatusEnum"];
+            /** Format: uuid */
+            readonly created_by_id: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `open` - Open
+         *     * `resolved` - Resolved
+         *     * `dismissed` - Dismissed
+         * @enum {string}
+         */
+        OpenQuestionStatusEnum: "open" | "resolved" | "dismissed";
         /**
          * @description * `prefilled` - Prefilled from passport
          *     * `customer` - Provided by customer
          * @enum {string}
          */
         OriginEnum: "prefilled" | "customer";
+        PatchedOpenQuestionPatch: {
+            question?: string;
+            answer?: string;
+            status?: components["schemas"]["OpenQuestionStatusEnum"];
+        };
+        PatchedProjectConflictPatch: {
+            status?: components["schemas"]["ProjectConflictStatusEnum"];
+            resolution?: string;
+        };
         PatchedProjectMetadataUpdate: {
             name?: string;
             project_type?: components["schemas"]["ProjectTypeEnum"];
             description?: string | null;
+        };
+        PatchedProjectStagePatch: {
+            name?: string;
+            description?: string;
+            position?: number;
+            status?: components["schemas"]["ProjectStageStatusEnum"];
+            /** Format: date */
+            start_date?: string | null;
+            /** Format: date */
+            due_date?: string | null;
+        };
+        PatchedRequirementPatch: {
+            title?: string;
+            description?: string;
+            status?: components["schemas"]["RequirementStatusEnum"];
         };
         PatchedSaveQuestionnaireAnswers: {
             answers?: {
                 [key: string]: unknown;
             };
         };
+        PatchedTaskPatch: {
+            title?: string;
+            description?: string;
+            /** Format: uuid */
+            stage_id?: string | null;
+            /** Format: uuid */
+            assignee_id?: string | null;
+            /** Format: date */
+            due_date?: string | null;
+            status?: components["schemas"]["TaskStatusEnum"];
+        };
+        ProjectConflictCreate: {
+            title: string;
+            /** @default  */
+            description: string;
+            evidence_refs: components["schemas"]["EvidenceReference"][];
+        };
+        ProjectConflictPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["ProjectConflictResponse"][];
+        };
+        ProjectConflictResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            readonly title: string;
+            readonly description: string;
+            readonly status: components["schemas"]["ProjectConflictStatusEnum"];
+            readonly resolution: string;
+            /** Format: uuid */
+            readonly resolved_by_id: string | null;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            readonly evidence: components["schemas"]["EvidenceResponse"][];
+            /** Format: uuid */
+            readonly created_by_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `unresolved` - Unresolved
+         *     * `resolved` - Resolved
+         *     * `dismissed` - Dismissed
+         * @enum {string}
+         */
+        ProjectConflictStatusEnum: "unresolved" | "resolved" | "dismissed";
         ProjectCreate: {
             name: string;
             project_type: components["schemas"]["ProjectTypeEnum"];
@@ -686,6 +1038,75 @@ export interface components {
             /** Format: date-time */
             readonly archived_at: string | null;
         };
+        ProjectStageCreate: {
+            name: string;
+            /** @default  */
+            description: string;
+            /** @default 0 */
+            position: number;
+            /** Format: date */
+            start_date?: string | null;
+            /** Format: date */
+            due_date?: string | null;
+        };
+        ProjectStagePage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["ProjectStageResponse"][];
+        };
+        ProjectStageResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly position: number;
+            readonly status: components["schemas"]["ProjectStageStatusEnum"];
+            /** Format: date */
+            readonly start_date: string | null;
+            /** Format: date */
+            readonly due_date: string | null;
+            /** Format: uuid */
+            readonly created_by_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `planned` - Planned
+         *     * `active` - Active
+         *     * `blocked` - Blocked
+         *     * `completed` - Completed
+         *     * `cancelled` - Cancelled
+         * @enum {string}
+         */
+        ProjectStageStatusEnum: "planned" | "active" | "blocked" | "completed" | "cancelled";
+        ProjectStateAggregate: {
+            /** Format: uuid */
+            project_id: string;
+            counts: components["schemas"]["ProjectStateCounts"];
+            collections: components["schemas"]["ProjectStateCollections"];
+        };
+        ProjectStateCollections: {
+            stages: string;
+            requirements: string;
+            tasks: string;
+            open_questions: string;
+            conflicts: string;
+            evidence_options: string;
+        };
+        ProjectStateCounts: {
+            stages: number;
+            requirements: number;
+            tasks: number;
+            open_questions: number;
+            conflicts: number;
+        };
         /**
          * @description * `draft` - Draft
          *     * `active` - Active
@@ -785,6 +1206,48 @@ export interface components {
          * @enum {string}
          */
         QuestionnaireSubmissionStatusEnum: "draft" | "submitted" | "correction_requested";
+        RequirementCreate: {
+            title: string;
+            /** @default  */
+            description: string;
+        };
+        RequirementPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["RequirementResponse"][];
+        };
+        RequirementResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            readonly title: string;
+            readonly description: string;
+            readonly status: components["schemas"]["RequirementStatusEnum"];
+            /** Format: uuid */
+            readonly created_by_id: string;
+            /** Format: uuid */
+            readonly confirmed_by_id: string | null;
+            /** Format: date-time */
+            readonly confirmed_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `draft` - Draft
+         *     * `confirmed` - Confirmed
+         *     * `in_progress` - In progress
+         *     * `blocked` - Blocked
+         *     * `completed` - Completed
+         *     * `rejected` - Rejected
+         * @enum {string}
+         */
+        RequirementStatusEnum: "draft" | "confirmed" | "in_progress" | "blocked" | "completed" | "rejected";
         ResendVerificationRequest: {
             /** Format: email */
             email?: string;
@@ -806,6 +1269,55 @@ export interface components {
             /** @default false */
             confirm_prefilled: boolean;
         };
+        TaskCreate: {
+            title: string;
+            /** @default  */
+            description: string;
+            /** Format: uuid */
+            stage_id?: string | null;
+            /** Format: uuid */
+            assignee_id?: string | null;
+            /** Format: date */
+            due_date?: string | null;
+        };
+        TaskPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["TaskResponse"][];
+        };
+        TaskResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            /** Format: uuid */
+            readonly stage_id: string | null;
+            readonly title: string;
+            readonly description: string;
+            readonly status: components["schemas"]["TaskStatusEnum"];
+            /** Format: uuid */
+            readonly assignee_id: string | null;
+            /** Format: date */
+            readonly due_date: string | null;
+            /** Format: uuid */
+            readonly created_by_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `todo` - To do
+         *     * `in_progress` - In progress
+         *     * `blocked` - Blocked
+         *     * `done` - Done
+         *     * `cancelled` - Cancelled
+         * @enum {string}
+         */
+        TaskStatusEnum: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
         /**
          * @description * `text` - text
          *     * `textarea` - textarea
@@ -1165,6 +1677,73 @@ export interface operations {
             };
         };
     };
+    project_state_conflict_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedProjectConflictPatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedProjectConflictPatch"];
+                "multipart/form-data": components["schemas"]["PatchedProjectConflictPatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectConflictResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     health_check: {
         parameters: {
             query?: never;
@@ -1338,6 +1917,73 @@ export interface operations {
                 };
             };
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_open_question_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOpenQuestionPatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOpenQuestionPatch"];
+                "multipart/form-data": components["schemas"]["PatchedOpenQuestionPatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenQuestionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1645,6 +2291,161 @@ export interface operations {
             };
         };
     };
+    project_state_conflicts_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectConflictPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_conflicts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectConflictCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProjectConflictCreate"];
+                "multipart/form-data": components["schemas"]["ProjectConflictCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectConflictResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_evidence_options_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceOptionPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     project_invitations_list: {
         parameters: {
             query?: never;
@@ -1853,6 +2654,113 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_open_questions_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenQuestionPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_open_questions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenQuestionCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["OpenQuestionCreate"];
+                "multipart/form-data": components["schemas"]["OpenQuestionCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenQuestionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2170,6 +3078,113 @@ export interface operations {
             };
         };
     };
+    project_state_requirements_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_requirements_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["RequirementCreate"];
+                "multipart/form-data": components["schemas"]["RequirementCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     projects_restore: {
         parameters: {
             query?: never;
@@ -2187,6 +3202,257 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_stages_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStagePage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_stages_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectStageCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProjectStageCreate"];
+                "multipart/form-data": components["schemas"]["ProjectStageCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStageResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_aggregate_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStateAggregate"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_tasks_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskPage"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_tasks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["TaskCreate"];
+                "multipart/form-data": components["schemas"]["TaskCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             401: {
@@ -2502,6 +3768,207 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuestionnaireSubmissionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_requirement_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedRequirementPatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedRequirementPatch"];
+                "multipart/form-data": components["schemas"]["PatchedRequirementPatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_stage_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedProjectStagePatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedProjectStagePatch"];
+                "multipart/form-data": components["schemas"]["PatchedProjectStagePatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStageResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_state_task_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedTaskPatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedTaskPatch"];
+                "multipart/form-data": components["schemas"]["PatchedTaskPatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
                 };
             };
             400: {

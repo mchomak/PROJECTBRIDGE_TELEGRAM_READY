@@ -418,13 +418,18 @@ explicitly approve.
 
 ## 8. Project State
 
-All Project State entities are visible to both project participants.
-Only the executor can create or modify structured Project State records.
+All Project State entities are visible to active project participants.
+Only the executor can create or modify structured Project State records,
+and writes are allowed while the project is `draft` or `active`.
 
 ### `ProjectStage`
 
 Fields: `id`, `project_id`, `name`, `description`, `position`, `status`,
 `start_date`, `due_date`, `created_by_id`, `created_at`, `updated_at`.
+
+Statuses are `planned`, `active`, `blocked`, `completed`, and
+`cancelled`. Only transitions in ADR-012 are allowed; `completed` and
+`cancelled` are terminal.
 
 ### `Requirement`
 
@@ -432,15 +437,29 @@ Fields: `id`, `project_id`, `title`, `description`, `status`,
 `created_by_id`, `confirmed_by_id`, `confirmed_at`, `created_at`,
 `updated_at`.
 
+Statuses are `draft`, `confirmed`, `in_progress`, `blocked`, `completed`,
+and `rejected`. Only transitions in ADR-012 are allowed; `completed` and
+`rejected` are terminal.
+
 ### `OpenQuestion`
 
 Fields: `id`, `project_id`, `question`, `answer`, `status`,
 `created_by_id`, `resolved_at`, `created_at`, `updated_at`.
 
+Statuses are `open`, `resolved`, and `dismissed`. Resolved and dismissed
+questions are terminal.
+
 ### `ProjectConflict`
 
 Fields: `id`, `project_id`, `title`, `description`, `status`,
-`resolution`, `resolved_by_id`, `created_at`, `updated_at`.
+`resolution`, `resolved_by_id`, `resolved_at`, `created_by_id`,
+`created_at`, `updated_at`.
+
+Statuses are `unresolved`, `resolved`, and `dismissed`. Resolving or
+dismissing records the executor and time; both statuses are terminal and
+cannot transition again. A resolved or dismissed conflict is immutable;
+all later updates are rejected. A shared conflict requires at least two
+same-project evidence sources and preserves their snapshots.
 
 A conflict preserves the competing values and their sources. AI-detected
 conflicts first appear as private AI proposals; they become shared
@@ -454,18 +473,23 @@ Fields: `id`, `project_id`, `stage_id` nullable FK ProjectStage,
 `title`, `description`, `status`, `assignee_id` nullable FK User,
 `due_date`, `created_by_id`, `created_at`, `updated_at`.
 
-No percentage completion field is defined.
+Statuses are `todo`, `in_progress`, `blocked`, `done`, and `cancelled`.
+Only transitions in ADR-012 are allowed; `done` and `cancelled` are
+terminal. No percentage completion field is defined.
 
 ### `Evidence`
 
 Fields: `id`, `project_id`, `source_type`, `source_id`, `excerpt`,
 `metadata` JSONB, `created_at`.
 
-`source_type` identifies a supported source such as a message,
-questionnaire answer, document chunk, or manual note. `source_id` is a
-polymorphic UUID; the application must validate that the referenced
-source exists and belongs to the same project. A plain polymorphic UUID
-cannot be protected by a normal database foreign key.
+`source_type` is `questionnaire_answer` or `message`. `source_id` is a
+polymorphic UUID; the owning app's selector must validate that the
+referenced source exists and belongs to the same project. Stage 06
+resolves questionnaire answers; the chat Message resolver is added after
+the message model and selector exist. A plain polymorphic UUID cannot be
+protected by a normal database foreign key. Evidence snapshots and
+conflict links are immutable; a normal update or delete of Evidence is
+rejected.
 
 ### Evidence links
 
@@ -473,7 +497,10 @@ cannot be protected by a normal database foreign key.
 - `ProjectConflictEvidence`: link table between ProjectConflict and
   Evidence.
 
-Both link tables should enforce unique pairs.
+`ProjectConflictEvidence` enforces unique `(conflict_id, evidence_id)`
+pairs. Deterministic questionnaire mapping conflicts remain in the
+executor-only `QuestionnaireConflict` queue; they do not automatically
+create a shared `ProjectConflict`.
 
 ## 9. AI Assistant
 

@@ -346,6 +346,7 @@ window after both approvals.
 | Method | Endpoint                                        | Permission     | Purpose                            |
 |:-------|:------------------------------------------------|:---------------|:-----------------------------------|
 | GET    | `/api/v1/projects/{project_id}/state/`          | Project member | Get shared Project State aggregate |
+| GET    | `/api/v1/projects/{project_id}/evidence-options/` | Executor     | List questionnaire answers that can be cited |
 | GET    | `/api/v1/projects/{project_id}/stages/`         | Project member | List stages                        |
 | POST   | `/api/v1/projects/{project_id}/stages/`         | Executor       | Create stage                       |
 | PATCH  | `/api/v1/stages/{stage_id}/`                    | Executor       | Update stage                       |
@@ -359,14 +360,41 @@ window after both approvals.
 | POST   | `/api/v1/projects/{project_id}/open-questions/` | Executor       | Create open question               |
 | PATCH  | `/api/v1/open-questions/{question_id}/`         | Executor       | Update/resolve question            |
 | GET    | `/api/v1/projects/{project_id}/conflicts/`      | Project member | List recorded conflicts            |
+| POST   | `/api/v1/projects/{project_id}/conflicts/`      | Executor       | Create conflict with evidence      |
 | PATCH  | `/api/v1/conflicts/{conflict_id}/`              | Executor       | Resolve conflict                   |
 
-The aggregate endpoint returns only shared Project State data. AI
-analyses and pending AI proposals are excluded.
+The aggregate endpoint returns shared Project State counts and links to
+the scoped collections; it does not return unbounded entity history. The
+collections use page pagination with a default page size of 20 and a
+maximum of 100, with stable ordering. AI analyses and pending AI
+proposals are excluded. Clients that need the complete collection follow
+each response's `next` link until it is `null`.
 
 The customer can read all Project State entities but cannot directly
 create or modify them. The customer contributes through chat and
 questionnaire responses.
+
+Project State collection reads require active project membership. Writes
+require executor membership and project status `draft` or `active`;
+completed and archived projects are read-only. Record updates validate
+the approved per-entity transition graph in ADR-012. Terminal records
+cannot be reopened. For terminal stages, requirements, tasks, and open
+questions, an executor may update supported content fields while omitting
+`status`; supplying `status` is rejected. A resolved or dismissed
+`ProjectConflict` is immutable: every later PATCH is rejected with `409`.
+The UI shows terminal statuses without an editable status selector, keeps
+content edits available for terminal stages, requirements, tasks, and
+questions, and hides edit controls for terminal conflicts. A record ID
+outside the project is returned as 404.
+Conflict creation accepts at least two distinct evidence references;
+Stage 06 supports same-project questionnaire answers. Evidence options
+are executor-only and sourced through the questionnaire app. Message
+evidence resolution is added once chat owns its Message selector.
+Conflict PATCH is only available while the conflict is `unresolved` and
+is used to resolve or dismiss it; resolution records the actor and
+timestamp. Resolved and dismissed conflicts cannot be edited again.
+Audit metadata contains target identifiers, changed field names, and
+status transitions, never user-entered content.
 
 ## 12. AI Assistant — `ai_assistant`
 

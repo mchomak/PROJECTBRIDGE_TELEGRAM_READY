@@ -758,6 +758,12 @@ export function ProjectOverviewPage() {
           <p className="page-heading__description">
             {project.description?.trim() || 'Project details and passport'}
           </p>
+          <Link
+            className="button button--secondary project-state-link"
+            to={`/app/projects/${project.id}/state`}
+          >
+            Open Project State
+          </Link>
         </div>
         <span className={`status-badge status-badge--large status-badge--${project.status}`}>
           {projectStatusLabels[project.status]}

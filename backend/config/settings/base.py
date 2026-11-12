@@ -137,6 +137,20 @@ SPECTACULAR_SETTINGS = {
         "QuestionnaireConflictStatusEnum": (
             "apps.questionnaire.models.QuestionnaireConflictStatus.choices"
         ),
+        "ProjectStageStatusEnum": (
+            "apps.project_state.models.ProjectStageStatus.choices"
+        ),
+        "RequirementStatusEnum": "apps.project_state.models.RequirementStatus.choices",
+        "TaskStatusEnum": "apps.project_state.models.TaskStatus.choices",
+        "OpenQuestionStatusEnum": (
+            "apps.project_state.models.OpenQuestionStatus.choices"
+        ),
+        "ProjectConflictStatusEnum": (
+            "apps.project_state.models.ProjectConflictStatus.choices"
+        ),
+        "EvidenceSourceTypeEnum": (
+            "apps.project_state.models.EvidenceSourceType.choices"
+        ),
     },
 }
 

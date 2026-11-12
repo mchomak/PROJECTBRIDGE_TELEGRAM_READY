@@ -56,9 +56,20 @@ silently.
     executor restore, are listed separately, and are not deleted.
     See `product/MVP_SCOPE.md`, `database/DATA_MODEL.md`,
     `api/API_CONTRACT.md`, and `security/ACCESS_CONTROL_AND_SECURITY.md`.
-5.  **Project State statuses:** Finalize status choices and allowed
-    transitions for stages, requirements, tasks, open questions, and
-    conflicts.
+5.  **Project State statuses — resolved for the MVP on 2026-11-12:**
+    `ProjectStage`: `planned -> active|cancelled`,
+    `active -> blocked|completed|cancelled`,
+    `blocked -> active|cancelled`; `Requirement`: `draft ->
+    confirmed|rejected`, `confirmed -> in_progress|rejected`,
+    `in_progress -> blocked|completed|rejected`,
+    `blocked -> in_progress|rejected`; `Task`: `todo ->
+    in_progress|cancelled`, `in_progress -> blocked|done|cancelled`,
+    `blocked -> in_progress|cancelled`; `OpenQuestion`: `open ->
+    resolved|dismissed`; `ProjectConflict`: `unresolved ->
+    resolved|dismissed`. Completed, cancelled, rejected, resolved, and
+    dismissed states are terminal. Project State owns transition
+    validation; no generic workflow engine or completion percentage is
+    introduced. See ADR-012 and the Stage 04-08 Autopilot spec §3.
 6.  **Customer contribution:** Confirm whether any structured customer
     edits beyond questionnaire submission will ever be allowed in the
     MVP.
