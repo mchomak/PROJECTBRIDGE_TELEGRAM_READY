@@ -1,10 +1,15 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   downloadProjectDocument,
   useProjectDocuments,
   type ProjectDocument,
+  type ProjectDocumentListStatus,
 } from '../../../entities/documents';
-import { useUploadProjectDocument } from '../../../features/documents';
+import {
+  useDocumentLifecycleAction,
+  useUploadProjectDocument,
+  type DocumentLifecycleActionVariables,
+} from '../../../features/documents';
 import './ProjectDocumentsPanel.css';
 
 const MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024;
@@ -35,23 +40,75 @@ function processingLabel(status: ProjectDocument['processing_status']): string {
   return 'Unsupported';
 }
 
+function remainingTime(deadline: string, now: number): string {
+  const remainingMinutes = Math.ceil((new Date(deadline).getTime() - now) / 60_000);
+  if (remainingMinutes <= 0) return 'The cancellation window has ended. Deletion is queued.';
+
+  const days = Math.floor(remainingMinutes / (24 * 60));
+  const hours = Math.floor((remainingMinutes % (24 * 60)) / 60);
+  const minutes = remainingMinutes % 60;
+  return `${days}d ${hours}h ${minutes}m until permanent deletion.`;
+}
+
+function retryLabel(label: string, failed: boolean): string {
+  if (!failed) return label;
+  if (label === 'Request archive') return 'Retry archive request';
+  if (label === 'Request permanent deletion') return 'Retry deletion request';
+  return `Retry ${label.toLowerCase()}`;
+}
+
 export function ProjectDocumentsPanel({
   projectId,
   canUpload,
+  canManageLifecycle,
+  currentUserId,
 }: {
   projectId: string;
   canUpload: boolean;
+  canManageLifecycle: boolean;
+  currentUserId: string;
 }) {
   const [page, setPage] = useState(1);
+  const [listStatus, setListStatus] = useState<ProjectDocumentListStatus>('active');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null);
+  const [clock, setClock] = useState(Date.now());
   const fileInput = useRef<HTMLInputElement>(null);
-  const documents = useProjectDocuments(projectId, page);
+  const documents = useProjectDocuments(projectId, page, listStatus);
   const upload = useUploadProjectDocument(projectId);
+  const lifecycle = useDocumentLifecycleAction(projectId);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function runLifecycleAction(variables: DocumentLifecycleActionVariables, label: string) {
+    setLifecycleMessage(null);
+    setPage(1);
+    lifecycle.mutate(variables, {
+      onSuccess: () => setLifecycleMessage(`${label} updated.`),
+    });
+  }
+
+  function isFailedAction(variables: DocumentLifecycleActionVariables): boolean {
+    const failed = lifecycle.variables;
+    if (!lifecycle.isError || !failed || failed.type !== variables.type) return false;
+    if (failed.documentId !== variables.documentId) return false;
+    if (failed.type === 'request' && variables.type === 'request') {
+      return failed.action === variables.action;
+    }
+    if (failed.type === 'request' || variables.type === 'request') return false;
+    if (failed.type === 'restore' || variables.type === 'restore') {
+      return failed.type === variables.type;
+    }
+    return failed.type === variables.type && failed.requestId === variables.requestId;
+  }
 
   function chooseFile(file: File | null) {
     upload.reset();
@@ -167,9 +224,50 @@ export function ProjectDocumentsPanel({
         </p>
       )}
 
+      <fieldset className="document-views">
+        <legend>Document views</legend>
+        {(
+          [
+            ['active', 'Active'],
+            ['archived', 'Archive'],
+            ['deletion_pending', 'Deletion pending'],
+          ] as const
+        ).map(([status, label]) => (
+          <button
+            aria-pressed={listStatus === status}
+            className="button button--secondary"
+            key={status}
+            onClick={() => {
+              setListStatus(status);
+              setPage(1);
+            }}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </fieldset>
+
+      {!canManageLifecycle && (
+        <p className="document-upload__readonly">
+          New lifecycle actions, decisions, and restoration are available while the project is a
+          draft or active.
+        </p>
+      )}
+
       {downloadError && (
         <p className="form-error" role="alert">
           {downloadError}
+        </p>
+      )}
+      {lifecycle.error && (
+        <p className="form-error" role="alert">
+          {lifecycle.error.message || 'The document lifecycle action could not be completed.'}
+        </p>
+      )}
+      {lifecycleMessage && (
+        <p className="success-message" role="status">
+          {lifecycleMessage}
         </p>
       )}
 
@@ -197,30 +295,289 @@ export function ProjectDocumentsPanel({
             {documents.data.count} {documents.data.count === 1 ? 'document' : 'documents'}
           </p>
           <ul className="document-list">
-            {documents.data.results.map((document) => (
-              <li className="document-row" key={document.id}>
-                <div className="document-row__main">
-                  <h3>{document.original_filename}</h3>
-                  <p>
-                    {document.mime_type} · {formatFileSize(document.file_size)}
-                  </p>
-                </div>
-                <div className="document-row__status">
-                  <span className="status-badge">
-                    {processingLabel(document.processing_status)}
-                  </span>
-                  <span>{new Date(document.created_at).toLocaleDateString()}</span>
-                </div>
-                <button
-                  className="button button--secondary"
-                  disabled={downloadingId === document.id}
-                  onClick={() => void download(document)}
-                  type="button"
-                >
-                  {downloadingId === document.id ? 'Downloading…' : 'Download'}
-                </button>
-              </li>
-            ))}
+            {documents.data.results.map((document) => {
+              const lifecycleRequest = document.lifecycle_request;
+              return (
+                <li className="document-row" key={document.id}>
+                  <div className="document-row__main">
+                    <h3>{document.original_filename}</h3>
+                    <p>
+                      {document.mime_type} · {formatFileSize(document.file_size)}
+                    </p>
+                  </div>
+                  <div className="document-row__status">
+                    <span className="status-badge">
+                      {processingLabel(document.processing_status)}
+                    </span>
+                    <span>{new Date(document.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="document-row__actions">
+                    <button
+                      className="button button--secondary"
+                      disabled={downloadingId === document.id}
+                      onClick={() => void download(document)}
+                      type="button"
+                    >
+                      {downloadingId === document.id ? 'Downloading…' : 'Download'}
+                    </button>
+                    {document.lifecycle_status === 'active' && canManageLifecycle && (
+                      <button
+                        className="button button--secondary"
+                        disabled={lifecycle.isPending}
+                        onClick={() =>
+                          runLifecycleAction(
+                            {
+                              type: 'request',
+                              documentId: document.id,
+                              action: 'archive',
+                            },
+                            'Archive request',
+                          )
+                        }
+                        type="button"
+                      >
+                        {retryLabel(
+                          'Request archive',
+                          isFailedAction({
+                            type: 'request',
+                            documentId: document.id,
+                            action: 'archive',
+                          }),
+                        )}
+                      </button>
+                    )}
+                    {document.lifecycle_status === 'archive_pending' && (
+                      <div className="document-lifecycle-status">
+                        <p role="status">
+                          Archive consent: {lifecycleRequest?.approvals.length ?? 1} of 2
+                          participants.
+                        </p>
+                        {canManageLifecycle &&
+                          lifecycleRequest &&
+                          lifecycleRequest.initiated_by_id !== currentUserId &&
+                          lifecycleRequest.viewer_decision === null && (
+                            <>
+                              <button
+                                className="button button--primary"
+                                disabled={lifecycle.isPending}
+                                onClick={() =>
+                                  runLifecycleAction(
+                                    {
+                                      type: 'approve',
+                                      documentId: document.id,
+                                      requestId: lifecycleRequest.id,
+                                    },
+                                    'Archive decision',
+                                  )
+                                }
+                                type="button"
+                              >
+                                {retryLabel(
+                                  'Approve archive',
+                                  isFailedAction({
+                                    type: 'approve',
+                                    documentId: document.id,
+                                    requestId: lifecycleRequest.id,
+                                  }),
+                                )}
+                              </button>
+                              <button
+                                className="button button--secondary"
+                                disabled={lifecycle.isPending}
+                                onClick={() =>
+                                  runLifecycleAction(
+                                    {
+                                      type: 'reject',
+                                      documentId: document.id,
+                                      requestId: lifecycleRequest.id,
+                                    },
+                                    'Archive decision',
+                                  )
+                                }
+                                type="button"
+                              >
+                                {retryLabel(
+                                  'Reject archive',
+                                  isFailedAction({
+                                    type: 'reject',
+                                    documentId: document.id,
+                                    requestId: lifecycleRequest.id,
+                                  }),
+                                )}
+                              </button>
+                            </>
+                          )}
+                      </div>
+                    )}
+                    {document.lifecycle_status === 'archived' && (
+                      <div className="document-lifecycle-status">
+                        {lifecycleRequest?.status === 'pending' ? (
+                          <>
+                            <p role="status">
+                              Deletion consent: {lifecycleRequest.approvals.length} of 2
+                              participants.
+                            </p>
+                            {canManageLifecycle &&
+                              lifecycleRequest.initiated_by_id !== currentUserId &&
+                              lifecycleRequest.viewer_decision === null && (
+                                <>
+                                  <button
+                                    className="button button--primary"
+                                    disabled={lifecycle.isPending}
+                                    onClick={() =>
+                                      runLifecycleAction(
+                                        {
+                                          type: 'approve',
+                                          documentId: document.id,
+                                          requestId: lifecycleRequest.id,
+                                        },
+                                        'Deletion decision',
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    {retryLabel(
+                                      'Approve deletion',
+                                      isFailedAction({
+                                        type: 'approve',
+                                        documentId: document.id,
+                                        requestId: lifecycleRequest.id,
+                                      }),
+                                    )}
+                                  </button>
+                                  <button
+                                    className="button button--secondary"
+                                    disabled={lifecycle.isPending}
+                                    onClick={() =>
+                                      runLifecycleAction(
+                                        {
+                                          type: 'reject',
+                                          documentId: document.id,
+                                          requestId: lifecycleRequest.id,
+                                        },
+                                        'Deletion decision',
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    {retryLabel(
+                                      'Reject deletion',
+                                      isFailedAction({
+                                        type: 'reject',
+                                        documentId: document.id,
+                                        requestId: lifecycleRequest.id,
+                                      }),
+                                    )}
+                                  </button>
+                                </>
+                              )}
+                          </>
+                        ) : (
+                          <>
+                            {canManageLifecycle && (
+                              <>
+                                <button
+                                  className="button button--secondary"
+                                  disabled={lifecycle.isPending}
+                                  onClick={() =>
+                                    runLifecycleAction(
+                                      { type: 'restore', documentId: document.id },
+                                      'Restore',
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {retryLabel(
+                                    'Restore document',
+                                    isFailedAction({ type: 'restore', documentId: document.id }),
+                                  )}
+                                </button>
+                                <button
+                                  className="button button--secondary"
+                                  disabled={lifecycle.isPending}
+                                  onClick={() =>
+                                    runLifecycleAction(
+                                      {
+                                        type: 'request',
+                                        documentId: document.id,
+                                        action: 'permanent_delete',
+                                      },
+                                      'Deletion request',
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {retryLabel(
+                                    'Request permanent deletion',
+                                    isFailedAction({
+                                      type: 'request',
+                                      documentId: document.id,
+                                      action: 'permanent_delete',
+                                    }),
+                                  )}
+                                </button>
+                              </>
+                            )}
+                            <p>
+                              Permanent deletion requires both participants and has a 30-day
+                              cancellation window after the second approval.
+                            </p>
+                            <p>
+                              Encrypted backups may retain a copy until the applicable backup
+                              expires.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {document.lifecycle_status === 'deletion_pending' && (
+                      <div className="document-lifecycle-status">
+                        {lifecycleRequest?.deletion_after ? (
+                          <>
+                            <p role="status">
+                              {remainingTime(lifecycleRequest.deletion_after, clock)}
+                            </p>
+                            <p>
+                              Encrypted backups may retain a copy until the applicable backup
+                              expires.
+                            </p>
+                            <button
+                              className="button button--secondary"
+                              disabled={
+                                lifecycle.isPending ||
+                                new Date(lifecycleRequest.deletion_after).getTime() <= clock
+                              }
+                              onClick={() =>
+                                runLifecycleAction(
+                                  {
+                                    type: 'cancel',
+                                    documentId: document.id,
+                                    requestId: lifecycleRequest.id,
+                                  },
+                                  'Deletion cancellation',
+                                )
+                              }
+                              type="button"
+                            >
+                              {retryLabel(
+                                'Cancel permanent deletion',
+                                isFailedAction({
+                                  type: 'cancel',
+                                  documentId: document.id,
+                                  requestId: lifecycleRequest.id,
+                                }),
+                              )}
+                            </button>
+                          </>
+                        ) : (
+                          <p role="status">Deletion is scheduled after both approvals.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
           {(documents.data.previous || documents.data.next) && (
             <nav className="document-pagination" aria-label="Document pages">

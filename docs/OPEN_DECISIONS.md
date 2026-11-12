@@ -154,6 +154,8 @@ silently.
     previously proposed 12-month project-retention and 14-day backup
     periods are not approved product requirements. A future product
     retention policy and operational backup schedule remain undecided.
+    A mutually approved document deletion is a separate document-level
+    action and does not delete its project or other project data.
 33. **Backup restoration:** Define recovery objectives and schedule
     restore tests.
 34. **Production secret manager:** Select the deployment platform and
@@ -171,3 +173,27 @@ silently.
     deployment stages.
 40. **MVP acceptance tests:** Convert the product workflows into
     end-to-end acceptance scenarios.
+
+## Recently resolved document lifecycle decision
+
+41. **Document archive and deletion lifecycle — resolved for the MVP on
+    2026-11-12:** Archive requests require both active project roles;
+    rejection returns the document to `active`, and approval moves it to
+    `archived`. Permanent deletion starts only from `archived`; its
+    30-day cancellation window begins at the second approval. Either
+    active member may cancel strictly before the deadline, returning the
+    document to `archived`; restore is a separate action. New requests,
+    decisions, and restore require a `draft` or `active` project. An
+    already approved due deletion still completes after a project
+    completes or is archived, and cancellation remains available before
+    the deadline. Backup expiry remains operational and has no fixed
+    product promise. See ADR-013, `documents/DOCUMENT_LIFECYCLE.md`,
+    `database/DATA_MODEL.md`, `api/API_CONTRACT.md`, and
+    `security/ACCESS_CONTROL_AND_SECURITY.md`.
+42. **Restore during a pending deletion request — resolved for the MVP on
+    2026-11-12:** Restoring an archived document cancels a permanent-delete
+    request that has only its initiator's approval, because that unfinished
+    consent must not remain actionable or block a later request. An
+    already approved deletion remains in `deletion_pending` and requires
+    the existing explicit cancellation before restore. See ADR-013 and
+    the document lifecycle, data model, API, and security contracts.

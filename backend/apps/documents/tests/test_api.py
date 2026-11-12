@@ -2,6 +2,7 @@ import hashlib
 import io
 import re
 import zipfile
+from datetime import datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -54,6 +55,92 @@ def _upload(client, csrf, project, filename, contents, content_type="text/plain"
     )
 
 
+def _create_active_document_pair(*, suffix):
+    from apps.documents.models import Document
+    from apps.projects.models import ProjectMember, ProjectMemberRole, ProjectStatus
+    from apps.projects.services import create_project
+
+    executor = _verified_user(f"{suffix}-executor@example.com")
+    customer = _verified_user(f"{suffix}-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": f"{suffix} documents", "project_type": "website"},
+    )
+    project.status = ProjectStatus.ACTIVE
+    project.save(update_fields=["status"])
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role=ProjectMemberRole.CUSTOMER,
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    upload = _upload(
+        executor_client,
+        executor_csrf,
+        project,
+        "shared.txt",
+        b"shared lifecycle content",
+    )
+    document = Document.objects.get(pk=upload.data["id"])
+    return {
+        "executor": executor,
+        "customer": customer,
+        "project": project,
+        "document": document,
+        "executor_client": executor_client,
+        "executor_csrf": executor_csrf,
+        "customer_client": customer_client,
+        "customer_csrf": customer_csrf,
+    }
+
+
+def _archive_document_via_api(resource):
+    document = resource["document"]
+    executor_client = resource["executor_client"]
+    executor_csrf = resource["executor_csrf"]
+    customer_client = resource["customer_client"]
+    customer_csrf = resource["customer_csrf"]
+    requested = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **executor_csrf,
+    )
+    assert requested.status_code == 201
+    approved = customer_client.post(
+        f"/api/v1/document-lifecycle-requests/{requested.data['id']}/approve/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+    assert approved.status_code == 200
+    return requested
+
+
+def _request_deletion_via_api(resource):
+    document = resource["document"]
+    executor_client = resource["executor_client"]
+    executor_csrf = resource["executor_csrf"]
+    customer_client = resource["customer_client"]
+    customer_csrf = resource["customer_csrf"]
+    requested = customer_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "permanent_delete"},
+        format="json",
+        **customer_csrf,
+    )
+    assert requested.status_code == 201
+    approved = executor_client.post(
+        f"/api/v1/document-lifecycle-requests/{requested.data['id']}/approve/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert approved.status_code == 200
+    return approved
+
+
 @pytest.mark.django_db
 def test_project_member_uploads_shared_text_document_with_server_metadata(
     temporary_media_root,
@@ -91,6 +178,7 @@ def test_project_member_uploads_shared_text_document_with_server_metadata(
         "created_at",
         "archived_at",
         "deleted_at",
+        "lifecycle_request",
     }
     assert response.data["project_id"] == str(project.pk)
     assert response.data["uploaded_by_id"] == str(actor.pk)
@@ -100,6 +188,7 @@ def test_project_member_uploads_shared_text_document_with_server_metadata(
     assert response.data["checksum_sha256"] == hashlib.sha256(contents).hexdigest()
     assert response.data["lifecycle_status"] == "active"
     assert response.data["processing_status"] == "queued"
+    assert response.data["lifecycle_request"] is None
     assert "storage_key" not in response.data
 
 
@@ -443,6 +532,547 @@ def test_storage_bytes_are_removed_when_document_metadata_write_fails(
     assert len(saved_keys) == 1
     assert not default_storage.exists(saved_keys[0])
     assert Document.objects.filter(project=project).count() == 0
+
+
+@pytest.mark.django_db
+def test_archive_request_rejection_returns_document_to_active_state(
+    temporary_media_root,
+):
+    from apps.documents.models import (
+        Document,
+        DocumentLifecycleApproval,
+        DocumentLifecycleRequest,
+    )
+    from apps.projects.models import ProjectMember, ProjectMemberRole, ProjectStatus
+    from apps.projects.services import create_project
+
+    executor = _verified_user("document-archive-executor@example.com")
+    customer = _verified_user("document-archive-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Archive consent", "project_type": "website"},
+    )
+    project.status = ProjectStatus.ACTIVE
+    project.save(update_fields=["status"])
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role=ProjectMemberRole.CUSTOMER,
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    upload = _upload(executor_client, executor_csrf, project, "shared.txt", b"shared")
+    document = Document.objects.get(pk=upload.data["id"])
+
+    requested = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **executor_csrf,
+    )
+    request = DocumentLifecycleRequest.objects.get(document=document)
+
+    assert requested.status_code == 201
+    assert request.status == "pending"
+    assert request.approvals.count() == 1
+    assert request.approvals.get().user_id == executor.pk
+    document.refresh_from_db()
+    assert document.lifecycle_status == "archive_pending"
+
+    rejected = customer_client.post(
+        f"/api/v1/document-lifecycle-requests/{request.pk}/reject/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+
+    assert rejected.status_code == 200
+    assert rejected.data["status"] == "rejected"
+    assert DocumentLifecycleApproval.objects.filter(
+        request=request,
+        user=customer,
+        decision="rejected",
+    ).exists()
+    document.refresh_from_db()
+    assert document.lifecycle_status == "active"
+    active_list = customer_client.get(f"/api/v1/projects/{project.pk}/documents/")
+    assert [item["id"] for item in active_list.data["results"]] == [str(document.pk)]
+
+
+@pytest.mark.django_db
+def test_both_members_archive_then_restore_as_separate_lifecycle_actions(
+    temporary_media_root,
+):
+    from apps.common.models import ProjectAuditLog
+    from apps.documents.models import Document
+    from apps.projects.models import ProjectMember, ProjectMemberRole, ProjectStatus
+    from apps.projects.services import create_project
+
+    executor = _verified_user("document-mutual-archive-executor@example.com")
+    customer = _verified_user("document-mutual-archive-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Mutual archive", "project_type": "website"},
+    )
+    project.status = ProjectStatus.ACTIVE
+    project.save(update_fields=["status"])
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role=ProjectMemberRole.CUSTOMER,
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    upload = _upload(executor_client, executor_csrf, project, "shared.txt", b"shared")
+    document = Document.objects.get(pk=upload.data["id"])
+    requested = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **executor_csrf,
+    )
+
+    approved = customer_client.post(
+        f"/api/v1/document-lifecycle-requests/{requested.data['id']}/approve/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+    document.refresh_from_db()
+    assert approved.status_code == 200
+    assert approved.data["status"] == "approved"
+    assert approved.data["viewer_decision"] == "approved"
+    assert document.lifecycle_status == "archived"
+    assert document.archived_at is not None
+    assert (
+        customer_client.get(f"/api/v1/projects/{project.pk}/documents/").data["results"]
+        == []
+    )
+    archived = customer_client.get(
+        f"/api/v1/projects/{project.pk}/documents/?status=archived"
+    )
+    assert [item["id"] for item in archived.data["results"]] == [str(document.pk)]
+
+    restored = customer_client.post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+
+    assert restored.status_code == 200
+    assert restored.data["lifecycle_status"] == "active"
+    assert restored.data["archived_at"] is None
+    assert restored.data["lifecycle_request"] is None
+    assert (
+        ProjectAuditLog.objects.filter(
+            project=project,
+            action__in=[
+                "document.archive_requested",
+                "document.archive_approved",
+                "document.restored",
+            ],
+        ).count()
+        == 3
+    )
+
+
+@pytest.mark.django_db
+def test_restoring_archived_document_cancels_pending_deletion_consent(
+    temporary_media_root,
+):
+    from apps.common.models import ProjectAuditLog
+    from apps.documents.models import DocumentLifecycleRequest
+
+    resource = _create_active_document_pair(suffix="document-restore-pending-delete")
+    document = resource["document"]
+    _archive_document_via_api(resource)
+    requested = resource["customer_client"].post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "permanent_delete"},
+        format="json",
+        **resource["customer_csrf"],
+    )
+    lifecycle_request = DocumentLifecycleRequest.objects.get(pk=requested.data["id"])
+
+    restored = resource["executor_client"].post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **resource["executor_csrf"],
+    )
+
+    lifecycle_request.refresh_from_db()
+    document.refresh_from_db()
+    assert requested.status_code == 201
+    assert requested.data["status"] == "pending"
+    assert restored.status_code == 200
+    assert restored.data["lifecycle_status"] == "active"
+    assert restored.data["lifecycle_request"] is None
+    assert lifecycle_request.status == "cancelled"
+    assert lifecycle_request.approvals.count() == 1
+    assert document.lifecycle_status == "active"
+    assert (
+        ProjectAuditLog.objects.filter(
+            project=resource["project"],
+            target_id=str(document.pk),
+            action__in=[
+                "document.restored",
+                "document.permanent_delete_request_cancelled_by_restore",
+            ],
+        ).count()
+        == 2
+    )
+
+    late_approval = resource["executor_client"].post(
+        f"/api/v1/document-lifecycle-requests/{lifecycle_request.pk}/approve/",
+        {},
+        format="json",
+        **resource["executor_csrf"],
+    )
+    assert late_approval.status_code == 409
+
+
+@pytest.mark.django_db
+def test_permanent_deletion_requires_archived_state_and_starts_grace_at_second_approval(
+    monkeypatch,
+    temporary_media_root,
+):
+    from apps.documents import services as document_services
+    from apps.documents.models import Document, DocumentLifecycleRequest
+    from apps.projects.models import ProjectMember, ProjectMemberRole, ProjectStatus
+    from apps.projects.services import create_project
+
+    executor = _verified_user("document-delete-executor@example.com")
+    customer = _verified_user("document-delete-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Deletion consent", "project_type": "website"},
+    )
+    project.status = ProjectStatus.ACTIVE
+    project.save(update_fields=["status"])
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role=ProjectMemberRole.CUSTOMER,
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    upload = _upload(executor_client, executor_csrf, project, "shared.txt", b"shared")
+    document = Document.objects.get(pk=upload.data["id"])
+
+    not_archived = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "permanent_delete"},
+        format="json",
+        **executor_csrf,
+    )
+    assert not_archived.status_code == 409
+    assert not DocumentLifecycleRequest.objects.filter(
+        document=document,
+        action="permanent_delete",
+    ).exists()
+
+    archive_request = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **executor_csrf,
+    )
+    archive_approval = customer_client.post(
+        f"/api/v1/document-lifecycle-requests/{archive_request.data['id']}/approve/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+    assert archive_approval.status_code == 200
+    document.refresh_from_db()
+    assert document.lifecycle_status == "archived"
+
+    fixed_now = timezone.now()
+    monkeypatch.setattr(document_services.timezone, "now", lambda: fixed_now)
+    delete_request_response = customer_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "permanent_delete"},
+        format="json",
+        **customer_csrf,
+    )
+    assert delete_request_response.status_code == 201
+    assert delete_request_response.data["deletion_after"] is None
+    assert len(delete_request_response.data["approvals"]) == 1
+    document.refresh_from_db()
+    assert document.lifecycle_status == "archived"
+
+    second_approval = executor_client.post(
+        f"/api/v1/document-lifecycle-requests/{delete_request_response.data['id']}/approve/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    expected_deadline = fixed_now + timedelta(days=30)
+
+    assert second_approval.status_code == 200
+    assert second_approval.data["status"] == "approved"
+    assert (
+        datetime.fromisoformat(
+            second_approval.data["deletion_after"].replace("Z", "+00:00")
+        )
+        == expected_deadline
+    )
+    document.refresh_from_db()
+    assert document.lifecycle_status == "deletion_pending"
+
+
+@pytest.mark.django_db
+def test_due_sweep_cleans_document_content_and_is_safe_to_retry_after_project_archive(
+    monkeypatch,
+    temporary_media_root,
+):
+    from apps.common.models import ProjectAuditLog
+    from apps.documents import services as document_services
+    from apps.documents.models import Document, DocumentLifecycleRequest
+    from apps.projects.models import ProjectMember, ProjectMemberRole
+    from apps.projects.services import archive_project, create_project
+
+    executor = _verified_user("document-sweep-executor@example.com")
+    customer = _verified_user("document-sweep-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Scheduled deletion", "project_type": "website"},
+    )
+    project.status = "active"
+    project.save(update_fields=["status"])
+    ProjectMember.objects.create(
+        project=project,
+        user=customer,
+        role=ProjectMemberRole.CUSTOMER,
+    )
+    executor_client, executor_csrf = _authenticated_client(executor)
+    customer_client, customer_csrf = _authenticated_client(customer)
+    contents = b"content to remove"
+    upload = _upload(executor_client, executor_csrf, project, "source.txt", contents)
+    document = Document.objects.get(pk=upload.data["id"])
+    storage_key = document.storage_key
+
+    archive_request = executor_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **executor_csrf,
+    )
+    archive_response = customer_client.post(
+        f"/api/v1/document-lifecycle-requests/{archive_request.data['id']}/approve/",
+        {},
+        format="json",
+        **customer_csrf,
+    )
+    assert archive_response.status_code == 200
+
+    fixed_now = timezone.now()
+    monkeypatch.setattr(document_services.timezone, "now", lambda: fixed_now)
+    delete_request = customer_client.post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "permanent_delete"},
+        format="json",
+        **customer_csrf,
+    )
+    approved_delete = executor_client.post(
+        f"/api/v1/document-lifecycle-requests/{delete_request.data['id']}/approve/",
+        {},
+        format="json",
+        **executor_csrf,
+    )
+    assert approved_delete.status_code == 200
+
+    archive_project(project_id=project.pk, actor=executor)
+    due_time = fixed_now + timedelta(days=30)
+    monkeypatch.setattr(document_services.timezone, "now", lambda: due_time)
+
+    at_deadline_client, at_deadline_csrf = _authenticated_client(customer)
+    too_late_to_cancel = at_deadline_client.post(
+        f"/api/v1/document-lifecycle-requests/{delete_request.data['id']}/cancel/",
+        {},
+        format="json",
+        **at_deadline_csrf,
+    )
+    assert too_late_to_cancel.status_code == 409
+    assert document_services.process_expired_deletions() == 1
+    assert document_services.process_expired_deletions() == 0
+    document.refresh_from_db()
+    lifecycle_request = DocumentLifecycleRequest.objects.get(
+        pk=delete_request.data["id"]
+    )
+
+    assert not default_storage.exists(storage_key)
+    assert document.lifecycle_status == "deleted"
+    assert document.original_filename == ""
+    assert document.mime_type == ""
+    assert document.file_size == 0
+    assert document.checksum_sha256 == hashlib.sha256(b"").hexdigest()
+    assert document.deleted_at == due_time
+    assert lifecycle_request.status == "completed"
+    assert lifecycle_request.completed_at == due_time
+    deletion_audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="document.deleted_by_mutual_consent",
+        target_id=str(document.pk),
+    )
+    assert deletion_audit.actor_id is None
+    assert deletion_audit.metadata == {}
+    after_deadline_client, _ = _authenticated_client(customer)
+    assert (
+        after_deadline_client.get(f"/api/v1/documents/{document.pk}/").status_code
+        == 404
+    )
+    assert (
+        after_deadline_client.get(
+            f"/api/v1/projects/{project.pk}/documents/?status=deletion_pending"
+        ).data["results"]
+        == []
+    )
+
+
+@pytest.mark.django_db
+def test_active_member_can_cancel_before_deadline_after_project_archive(
+    monkeypatch,
+    temporary_media_root,
+):
+    from apps.documents import services as document_services
+    from apps.documents.models import DocumentLifecycleRequest
+    from apps.projects.services import archive_project
+
+    resource = _create_active_document_pair(suffix="document-cancel")
+    document = resource["document"]
+    project = resource["project"]
+    fixed_now = timezone.now()
+    monkeypatch.setattr(document_services.timezone, "now", lambda: fixed_now)
+    _archive_document_via_api(resource)
+    approved_delete = _request_deletion_via_api(resource)
+    deadline = datetime.fromisoformat(
+        approved_delete.data["deletion_after"].replace("Z", "+00:00")
+    )
+    storage_key = document.storage_key
+    archive_project(project_id=project.pk, actor=resource["executor"])
+
+    monkeypatch.setattr(
+        document_services.timezone,
+        "now",
+        lambda: deadline - timedelta(microseconds=1),
+    )
+    cancel_client, cancel_csrf = _authenticated_client(resource["executor"])
+    cancelled = cancel_client.post(
+        f"/api/v1/document-lifecycle-requests/{approved_delete.data['id']}/cancel/",
+        {},
+        format="json",
+        **cancel_csrf,
+    )
+
+    document.refresh_from_db()
+    lifecycle_request = DocumentLifecycleRequest.objects.get(
+        pk=approved_delete.data["id"]
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.data["status"] == "cancelled"
+    assert document.lifecycle_status == "archived"
+    assert lifecycle_request.status == "cancelled"
+
+    monkeypatch.setattr(document_services.timezone, "now", lambda: deadline)
+    assert document_services.process_expired_deletions() == 0
+    assert default_storage.exists(storage_key)
+
+
+@pytest.mark.django_db
+def test_only_other_member_decides_and_cross_project_ids_are_hidden(
+    temporary_media_root,
+):
+    from apps.projects.models import ProjectStatus
+    from apps.projects.services import create_project
+
+    resource = _create_active_document_pair(suffix="document-consent-role")
+    document = resource["document"]
+    requested = resource["executor_client"].post(
+        f"/api/v1/documents/{document.pk}/lifecycle-requests/",
+        {"action": "archive"},
+        format="json",
+        **resource["executor_csrf"],
+    )
+    outsider = _verified_user("document-consent-outsider@example.com")
+    other_project = create_project(
+        actor=outsider,
+        data={"name": "Unrelated project", "project_type": "website"},
+    )
+    other_project.status = ProjectStatus.ACTIVE
+    other_project.save(update_fields=["status"])
+    outsider_client, outsider_csrf = _authenticated_client(outsider)
+
+    self_approval = resource["executor_client"].post(
+        f"/api/v1/document-lifecycle-requests/{requested.data['id']}/approve/",
+        {},
+        format="json",
+        **resource["executor_csrf"],
+    )
+    cross_project_decision = outsider_client.post(
+        f"/api/v1/document-lifecycle-requests/{requested.data['id']}/approve/",
+        {},
+        format="json",
+        **outsider_csrf,
+    )
+
+    assert self_approval.status_code == 403
+    assert cross_project_decision.status_code == 404
+    assert other_project.pk != resource["project"].pk
+
+
+@pytest.mark.django_db
+def test_restore_requires_archived_document_member_access_and_mutable_project(
+    temporary_media_root,
+):
+    from apps.projects.services import complete_project, create_project, reopen_project
+
+    resource = _create_active_document_pair(suffix="document-restore-eligibility")
+    document = resource["document"]
+    project = resource["project"]
+    active_restore = resource["customer_client"].post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **resource["customer_csrf"],
+    )
+    archive_request = _archive_document_via_api(resource)
+    complete_project(project_id=project.pk, actor=resource["executor"])
+    read_only_restore = resource["customer_client"].post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **resource["customer_csrf"],
+    )
+    outsider = _verified_user("document-restore-outsider@example.com")
+    other_project = create_project(
+        actor=outsider,
+        data={"name": "Other restore project", "project_type": "website"},
+    )
+    outsider_client, outsider_csrf = _authenticated_client(outsider)
+    cross_project_restore = outsider_client.post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **outsider_csrf,
+    )
+
+    assert active_restore.status_code == 409
+    assert read_only_restore.status_code == 409
+    assert cross_project_restore.status_code == 404
+    assert archive_request.status_code == 201
+    reopen_project(project_id=project.pk, actor=resource["executor"])
+    restored = resource["customer_client"].post(
+        f"/api/v1/documents/{document.pk}/restore/",
+        {},
+        format="json",
+        **resource["customer_csrf"],
+    )
+    assert restored.status_code == 200
+    assert restored.data["lifecycle_status"] == "active"
+    assert other_project.pk != project.pk
 
 
 def test_document_download_openapi_describes_binary_content_types():

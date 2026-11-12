@@ -3,7 +3,7 @@
 **Status:** Endpoint baseline; Stage 02 authentication schemas finalized;
 other request/response schemas remain to be finalized  
 **API version:** v1  
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-12
 
 ## 1. Transport and conventions
 
@@ -361,10 +361,11 @@ cursor-paginated REST history.
 | POST   | `/api/v1/documents/{document_id}/restore/`                  | Project member       | Restore archived document                   |
 
 The document collection supports `page` (default `1`) and `page_size`
-(default `20`, maximum `100`). Its default status view contains active
-and archive-pending documents; `status=archived` and
-`status=deletion_pending` select those respective states. Deleted
-documents are never returned as content.
+(default `20`, maximum `100`). Its default view, equivalent to
+`status=active`, contains `active` and `archive_pending` documents.
+`status=archived` and `status=deletion_pending` select those respective
+states. Archived and deletion-pending documents are absent from the
+active view; deleted documents are never returned as content.
 
 Uploads use `multipart/form-data` with a `file` field. The server accepts
 only `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown`, validates the
@@ -382,10 +383,54 @@ download. Every download is authorized on the backend and streamed as an
 attachment; file bytes have no public URL. Cross-project or inactive
 membership resource IDs return `404`.
 
-Archive and permanent deletion require consent from both participants.
-The initiating participant’s request records their approval; the other
-participant must approve. Permanent deletion has a 30-day cancellation
-window after both approvals.
+Create a lifecycle request with
+`{"action":"archive"}` or
+`{"action":"permanent_delete"}`. The `201` response contains the
+request `id`, `document_id`, `action`, `initiated_by_id`, `status`, both
+participants’ recorded approvals, the current viewer’s decision, and
+`deletion_after`, `created_at`, and `completed_at` timestamps. The
+initiating participant’s approval is recorded with the request. Both
+active project roles must exist before a request can be started; a
+request requires a `draft` or `active` project. Archive is available
+only for an `active` document. It becomes `archive_pending` until the
+other active participant decides. Approval moves it to `archived`; a
+rejection returns it to `active`.
+
+Permanent deletion is available only for an `archived` document. The
+document remains archived while the second approval is pending. The
+second approval moves it to `deletion_pending` and sets
+`deletion_after` to exactly 30 days after that approval. The deletion
+cancellation endpoint accepts either active project member only while
+the current time is strictly earlier than `deletion_after`; at the
+deadline, cancellation returns `409`. Cancellation marks the request
+cancelled and returns the document to `archived`. Restoration is a
+separate action: either active project member can restore an archived
+document to `active` while the parent project is `draft` or `active`.
+If restoration is requested while a permanent-delete request is still
+pending after only the initiator's approval, the restore transaction
+cancels that request and records both actions. An already approved
+deletion must be explicitly cancelled before the document can be
+restored.
+An archive rejection leaves the file active; a deletion rejection
+leaves it archived.
+
+Request creation, approval/rejection, and restoration require an active
+member and a mutable parent project (`draft` or `active`). Cancellation
+remains available to an active member before the deadline even if the
+parent project has since completed or been archived; it withdraws
+previous consent. A scheduled deletion that has already reached its
+deadline also completes after a parent project is completed or archived.
+Cross-project and inactive-member resource IDs return `404`; approving
+or rejecting one’s own request returns `403`.
+
+Celery Beat runs an idempotent deletion sweep every five minutes. It
+removes the source file and any existing document derivatives, clears
+content-bearing metadata, marks the document deleted, and records a
+content-free audit event. Cancelled and stale requests are ignored. The
+document row and lifecycle consent records remain as a minimal tombstone
+and audit trail. Encrypted backups may retain deleted files until their
+applicable operational expiry; no fixed backup period or immediate
+purge from every backup is promised.
 
 ## 11. Project State — `project_state`
 

@@ -3,6 +3,11 @@ import type { components } from '../../../shared/api/generated/schema';
 
 export type ProjectDocument = components['schemas']['DocumentResponse'];
 export type ProjectDocumentPage = components['schemas']['DocumentListResponse'];
+export type ProjectDocumentLifecycleRequest =
+  components['schemas']['DocumentLifecycleRequestResponse'];
+export type ProjectDocumentLifecycleAction =
+  components['schemas']['DocumentLifecycleAction']['action'];
+export type ProjectDocumentListStatus = 'active' | 'archived' | 'deletion_pending';
 
 type CsrfToken = components['schemas']['CsrfToken'];
 
@@ -18,9 +23,43 @@ export function getProjectDocuments(
   projectId: string,
   page = 1,
   pageSize = 100,
+  status: ProjectDocumentListStatus = 'active',
 ): Promise<ProjectDocumentPage> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (status !== 'active') params.set('status', status);
   return apiJson<ProjectDocumentPage>(`${projectDocumentsPath(projectId)}?${params.toString()}`);
+}
+
+function postJson<T>(path: string, body: Record<string, never> | { action: string }): Promise<T> {
+  return apiJson<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function requestProjectDocumentLifecycle(
+  documentId: string,
+  action: ProjectDocumentLifecycleAction,
+): Promise<ProjectDocumentLifecycleRequest> {
+  return postJson<ProjectDocumentLifecycleRequest>(
+    `${documentPath(documentId)}lifecycle-requests/`,
+    { action },
+  );
+}
+
+export function decideProjectDocumentLifecycle(
+  requestId: string,
+  decision: 'approve' | 'reject' | 'cancel',
+): Promise<ProjectDocumentLifecycleRequest> {
+  return postJson<ProjectDocumentLifecycleRequest>(
+    `/api/v1/document-lifecycle-requests/${encodeURIComponent(requestId)}/${decision}/`,
+    {},
+  );
+}
+
+export function restoreProjectDocument(documentId: string): Promise<ProjectDocument> {
+  return postJson<ProjectDocument>(`${documentPath(documentId)}restore/`, {});
 }
 
 export function uploadProjectDocument(

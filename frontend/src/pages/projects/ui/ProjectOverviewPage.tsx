@@ -861,6 +861,8 @@ export function ProjectOverviewPage() {
       </div>
       <ProjectDocumentsPanel
         canUpload={project.status === 'draft' || project.status === 'active'}
+        canManageLifecycle={project.status === 'draft' || project.status === 'active'}
+        currentUserId={user.id}
         projectId={project.id}
       />
     </main>

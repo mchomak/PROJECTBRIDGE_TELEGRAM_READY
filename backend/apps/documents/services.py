@@ -5,6 +5,7 @@ import unicodedata
 import uuid
 import zipfile
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import PurePosixPath
 
 from django.core.exceptions import ValidationError
@@ -12,7 +13,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import transaction
+from django.utils import timezone
 
+from apps.common.services import record_project_action
 from apps.projects.models import (
     Project,
     ProjectMember,
@@ -20,7 +23,15 @@ from apps.projects.models import (
     ProjectStatus,
 )
 
-from .models import Document, DocumentLifecycleStatus
+from .models import (
+    Document,
+    DocumentLifecycleAction,
+    DocumentLifecycleApproval,
+    DocumentLifecycleDecision,
+    DocumentLifecycleRequest,
+    DocumentLifecycleRequestStatus,
+    DocumentLifecycleStatus,
+)
 from .selectors import get_document_for_member, get_documents_for_member
 
 MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
@@ -43,6 +54,10 @@ class DocumentNotFoundError(Exception):
 
 class DocumentStateConflictError(Exception):
     """The project state does not allow document mutations."""
+
+
+class DocumentLifecyclePermissionError(Exception):
+    """The active project member cannot decide this lifecycle request."""
 
 
 class DocumentTooLargeError(Exception):
@@ -246,3 +261,344 @@ def open_document_download(*, document_id, actor):
         return document, default_storage.open(document.storage_key, "rb")
     except (FileNotFoundError, OSError) as exc:
         raise DocumentNotFoundError from exc
+
+
+def _lock_member_document(*, document_id, actor):
+    candidate = get_document_for_member(document_id=document_id, actor=actor)
+    if candidate is None:
+        raise DocumentNotFoundError
+
+    project = _get_active_member_project(
+        project_id=candidate.project_id,
+        actor=actor,
+        lock=True,
+    )
+    document = (
+        Document.objects.select_for_update()
+        .filter(pk=document_id, project_id=project.pk)
+        .exclude(lifecycle_status=DocumentLifecycleStatus.DELETED)
+        .first()
+    )
+    if document is None:
+        raise DocumentNotFoundError
+    return project, document
+
+
+def _lock_member_lifecycle_request(*, request_id, actor):
+    candidate = (
+        DocumentLifecycleRequest.objects.filter(
+            pk=request_id,
+            document__project__memberships__user=actor,
+            document__project__memberships__status=ProjectMemberStatus.ACTIVE,
+        )
+        .exclude(document__lifecycle_status=DocumentLifecycleStatus.DELETED)
+        .select_related("document")
+        .first()
+    )
+    if candidate is None:
+        raise DocumentNotFoundError
+
+    project = _get_active_member_project(
+        project_id=candidate.document.project_id,
+        actor=actor,
+        lock=True,
+    )
+    document = (
+        Document.objects.select_for_update()
+        .filter(pk=candidate.document_id, project_id=project.pk)
+        .exclude(lifecycle_status=DocumentLifecycleStatus.DELETED)
+        .first()
+    )
+    if document is None:
+        raise DocumentNotFoundError
+    lifecycle_request = (
+        DocumentLifecycleRequest.objects.select_for_update()
+        .filter(pk=request_id, document=document)
+        .first()
+    )
+    if lifecycle_request is None:
+        raise DocumentNotFoundError
+    return project, document, lifecycle_request
+
+
+def _require_mutable_project(project):
+    if project.status not in (ProjectStatus.DRAFT, ProjectStatus.ACTIVE):
+        raise DocumentStateConflictError
+
+
+def _require_both_active_participants(project_id):
+    members = list(
+        ProjectMember.objects.select_for_update()
+        .filter(project_id=project_id, status=ProjectMemberStatus.ACTIVE)
+        .order_by("role")
+    )
+    if {member.role for member in members} != {"executor", "customer"}:
+        raise DocumentStateConflictError
+    return members
+
+
+def _audit_lifecycle_action(*, project_id, actor, action, document):
+    record_project_action(
+        project_id=project_id,
+        actor_id=actor.pk if actor is not None else None,
+        action=action,
+        target_type="document",
+        target_id=document.pk,
+        metadata={},
+    )
+
+
+def request_lifecycle_action(*, document_id, actor, action):
+    if action not in DocumentLifecycleAction.values:
+        raise ValidationError({"action": "Select a valid choice."})
+
+    with transaction.atomic():
+        project, document = _lock_member_document(document_id=document_id, actor=actor)
+        _require_mutable_project(project)
+        _require_both_active_participants(project.pk)
+
+        if action == DocumentLifecycleAction.ARCHIVE:
+            if document.lifecycle_status != DocumentLifecycleStatus.ACTIVE:
+                raise DocumentStateConflictError
+        elif document.lifecycle_status != DocumentLifecycleStatus.ARCHIVED:
+            raise DocumentStateConflictError
+
+        if DocumentLifecycleRequest.objects.filter(
+            document=document,
+            action=action,
+            status=DocumentLifecycleRequestStatus.PENDING,
+        ).exists():
+            raise DocumentStateConflictError
+
+        lifecycle_request = DocumentLifecycleRequest.objects.create(
+            document=document,
+            action=action,
+            initiated_by=actor,
+        )
+        DocumentLifecycleApproval.objects.create(
+            request=lifecycle_request,
+            user=actor,
+            decision=DocumentLifecycleDecision.APPROVED,
+        )
+
+        if action == DocumentLifecycleAction.ARCHIVE:
+            document.lifecycle_status = DocumentLifecycleStatus.ARCHIVE_PENDING
+            document.save(update_fields=["lifecycle_status"])
+            audit_action = "document.archive_requested"
+        else:
+            audit_action = "document.permanent_delete_requested"
+
+        _audit_lifecycle_action(
+            project_id=project.pk,
+            actor=actor,
+            action=audit_action,
+            document=document,
+        )
+        return lifecycle_request
+
+
+def decide_lifecycle_request(*, request_id, actor, decision):
+    if decision not in DocumentLifecycleDecision.values:
+        raise ValidationError({"decision": "Select a valid choice."})
+
+    with transaction.atomic():
+        project, document, lifecycle_request = _lock_member_lifecycle_request(
+            request_id=request_id,
+            actor=actor,
+        )
+        _require_mutable_project(project)
+        members = _require_both_active_participants(project.pk)
+        if lifecycle_request.initiated_by_id == actor.pk or actor.pk not in {
+            member.user_id for member in members
+        }:
+            raise DocumentLifecyclePermissionError
+
+        existing_approval = lifecycle_request.approvals.filter(user=actor).first()
+        if existing_approval is not None:
+            if existing_approval.decision == decision and lifecycle_request.status == (
+                DocumentLifecycleRequestStatus.REJECTED
+                if decision == DocumentLifecycleDecision.REJECTED
+                else DocumentLifecycleRequestStatus.APPROVED
+            ):
+                return lifecycle_request
+            raise DocumentStateConflictError
+
+        if lifecycle_request.status != DocumentLifecycleRequestStatus.PENDING:
+            raise DocumentStateConflictError
+        if lifecycle_request.action == DocumentLifecycleAction.ARCHIVE:
+            expected_status = DocumentLifecycleStatus.ARCHIVE_PENDING
+        else:
+            expected_status = DocumentLifecycleStatus.ARCHIVED
+        if document.lifecycle_status != expected_status:
+            raise DocumentStateConflictError
+
+        DocumentLifecycleApproval.objects.create(
+            request=lifecycle_request,
+            user=actor,
+            decision=decision,
+        )
+
+        if decision == DocumentLifecycleDecision.REJECTED:
+            lifecycle_request.status = DocumentLifecycleRequestStatus.REJECTED
+            if lifecycle_request.action == DocumentLifecycleAction.ARCHIVE:
+                document.lifecycle_status = DocumentLifecycleStatus.ACTIVE
+                document.save(update_fields=["lifecycle_status"])
+            audit_action = f"document.{lifecycle_request.action}_rejected"
+        else:
+            lifecycle_request.status = DocumentLifecycleRequestStatus.APPROVED
+            audit_action = f"document.{lifecycle_request.action}_approved"
+            if lifecycle_request.action == DocumentLifecycleAction.ARCHIVE:
+                document.lifecycle_status = DocumentLifecycleStatus.ARCHIVED
+                document.archived_at = timezone.now()
+                document.save(update_fields=["lifecycle_status", "archived_at"])
+            else:
+                now = timezone.now()
+                document.lifecycle_status = DocumentLifecycleStatus.DELETION_PENDING
+                lifecycle_request.deletion_after = now + timedelta(days=30)
+                document.save(update_fields=["lifecycle_status"])
+
+        lifecycle_request.save(
+            update_fields=["status", "deletion_after"],
+        )
+        _audit_lifecycle_action(
+            project_id=project.pk,
+            actor=actor,
+            action=audit_action,
+            document=document,
+        )
+        return lifecycle_request
+
+
+def restore_document(*, document_id, actor):
+    with transaction.atomic():
+        project, document = _lock_member_document(document_id=document_id, actor=actor)
+        _require_mutable_project(project)
+        if document.lifecycle_status != DocumentLifecycleStatus.ARCHIVED:
+            raise DocumentStateConflictError
+
+        pending_deletion = (
+            DocumentLifecycleRequest.objects.select_for_update()
+            .filter(
+                document=document,
+                action=DocumentLifecycleAction.PERMANENT_DELETE,
+                status=DocumentLifecycleRequestStatus.PENDING,
+            )
+            .first()
+        )
+        if pending_deletion is not None:
+            pending_deletion.status = DocumentLifecycleRequestStatus.CANCELLED
+            pending_deletion.save(update_fields=["status"])
+            _audit_lifecycle_action(
+                project_id=project.pk,
+                actor=actor,
+                action="document.permanent_delete_request_cancelled_by_restore",
+                document=document,
+            )
+
+        document.lifecycle_status = DocumentLifecycleStatus.ACTIVE
+        document.archived_at = None
+        document.save(update_fields=["lifecycle_status", "archived_at"])
+        _audit_lifecycle_action(
+            project_id=project.pk,
+            actor=actor,
+            action="document.restored",
+            document=document,
+        )
+        return document
+
+
+def cancel_lifecycle_request(*, request_id, actor):
+    with transaction.atomic():
+        _project, document, lifecycle_request = _lock_member_lifecycle_request(
+            request_id=request_id,
+            actor=actor,
+        )
+        now = timezone.now()
+        if (
+            lifecycle_request.action != DocumentLifecycleAction.PERMANENT_DELETE
+            or lifecycle_request.status != DocumentLifecycleRequestStatus.APPROVED
+            or document.lifecycle_status != DocumentLifecycleStatus.DELETION_PENDING
+            or lifecycle_request.deletion_after is None
+            or now >= lifecycle_request.deletion_after
+        ):
+            raise DocumentStateConflictError
+
+        lifecycle_request.status = DocumentLifecycleRequestStatus.CANCELLED
+        lifecycle_request.save(update_fields=["status"])
+        document.lifecycle_status = DocumentLifecycleStatus.ARCHIVED
+        document.save(update_fields=["lifecycle_status"])
+        _audit_lifecycle_action(
+            project_id=document.project_id,
+            actor=actor,
+            action="document.permanent_delete_cancelled",
+            document=document,
+        )
+        return lifecycle_request
+
+
+def process_expired_deletions():
+    candidate_rows = list(
+        DocumentLifecycleRequest.objects.filter(
+            action=DocumentLifecycleAction.PERMANENT_DELETE,
+            status=DocumentLifecycleRequestStatus.APPROVED,
+            deletion_after__lte=timezone.now(),
+            document__lifecycle_status=DocumentLifecycleStatus.DELETION_PENDING,
+        )
+        .order_by("deletion_after", "id")
+        .values_list("document__project_id", "document_id", "id")
+    )
+    completed = 0
+
+    for project_id, document_id, request_id in candidate_rows:
+        with transaction.atomic():
+            project = Project.objects.select_for_update().filter(pk=project_id).first()
+            document = (
+                Document.objects.select_for_update()
+                .filter(pk=document_id, project_id=project_id)
+                .first()
+            )
+            lifecycle_request = (
+                DocumentLifecycleRequest.objects.select_for_update()
+                .filter(pk=request_id, document_id=document_id)
+                .first()
+            )
+            if project is None or document is None or lifecycle_request is None:
+                continue
+            if (
+                lifecycle_request.action != DocumentLifecycleAction.PERMANENT_DELETE
+                or lifecycle_request.status != DocumentLifecycleRequestStatus.APPROVED
+                or lifecycle_request.deletion_after is None
+                or timezone.now() < lifecycle_request.deletion_after
+                or document.lifecycle_status != DocumentLifecycleStatus.DELETION_PENDING
+            ):
+                continue
+
+            default_storage.delete(document.storage_key)
+            document.original_filename = ""
+            document.mime_type = ""
+            document.file_size = 0
+            document.checksum_sha256 = hashlib.sha256(b"").hexdigest()
+            document.lifecycle_status = DocumentLifecycleStatus.DELETED
+            document.deleted_at = timezone.now()
+            document.save(
+                update_fields=[
+                    "original_filename",
+                    "mime_type",
+                    "file_size",
+                    "checksum_sha256",
+                    "lifecycle_status",
+                    "deleted_at",
+                ]
+            )
+            lifecycle_request.status = DocumentLifecycleRequestStatus.COMPLETED
+            lifecycle_request.completed_at = document.deleted_at
+            lifecycle_request.save(update_fields=["status", "completed_at"])
+            _audit_lifecycle_action(
+                project_id=project.pk,
+                actor=None,
+                action="document.deleted_by_mutual_consent",
+                document=document,
+            )
+            completed += 1
+
+    return completed

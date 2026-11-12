@@ -1,7 +1,7 @@
 # Access Control and Security
 
 **Status:** Access model agreed; production compliance work remains  
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-12
 
 ## 1. Roles
 
@@ -46,6 +46,19 @@ Both participants must consent to document archiving and permanent
 deletion. The initiating participant’s request records their approval;
 the other participant must approve separately.
 
+Starting a request and approving/rejecting it require both active project
+roles and a parent project in `draft` or `active`. Only the other active
+participant may approve or reject a request. Either active project
+member may cancel a mutually approved deletion strictly before its
+deadline, including after the parent project has completed or been
+archived. Restoring an archived document is a separate action available
+to either active member while the parent project is `draft` or `active`.
+If a one-party deletion request is still pending, restoration cancels
+that request and records the withdrawal; an approved deletion must be
+explicitly cancelled before restoration.
+An already approved deletion completes when due even if the parent
+project later becomes completed or archived.
+
 ### Project status overrides
 
 The role matrix above applies subject to these project lifecycle rules.
@@ -58,6 +71,12 @@ both participants retain read access to existing project data.
 | `active` | The role matrix applies. |
 | `completed` | Both participants can read project data, including the passport, chat history, documents, and Project State. Passport/project edits, new chat messages, document mutations/uploads, Project State changes, and new questionnaire answers are blocked. The executor may reopen to `active` or archive. |
 | `archived` | The project is omitted from the main project list and appears in the separate archive list. Both participants can read existing data; all data mutations are blocked except executor restoration to `status_before_archive`. |
+
+The completed/archived project read-only rule does not strand an already
+approved document deletion: either active member may still cancel before
+its deadline, and the scheduled sweep completes an uncancelled deletion
+once due. This exception does not permit new lifecycle requests,
+decisions, or document restoration in a completed/archived project.
 
 Only the executor can directly request a project status transition. The
 `draft`-to-`active` change is performed by the invitation service after
@@ -207,6 +226,11 @@ functionality must not be added as part of document upload.
 - Completed and archived projects, including their documents, are not
   automatically deleted in the MVP. Project archival is reversible and
   does not delete data.
+- A document may be permanently deleted only after both project
+  participants approve deletion of that archived document. The fixed
+  30-day cancellation period begins at the second approval. This
+  document-level action does not automatically delete the project or
+  any other project data.
 - The previously proposed 12-month project-retention and 14-day backup
   periods are not approved product requirements. They must not trigger
   project deletion or be presented as user-facing retention promises.
@@ -217,9 +241,10 @@ functionality must not be added as part of document upload.
   source contents; the exact retention period must be finalized.
 - Test database and file restoration periodically.
 
-For mutually approved permanent document deletion, communicate the
-backup-retention behavior once an operational backup schedule is
-approved.
+Mutually approved permanent document deletion removes live source and
+Stage 08 data after the cancellation deadline. Encrypted backups may
+retain deleted files until their applicable operational expiry; do not
+promise a fixed backup period or immediate erasure from every backup.
 
 ## 11. Deferred production requirements
 

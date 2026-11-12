@@ -149,6 +149,54 @@ export interface paths {
         patch: operations["project_state_conflict_update"];
         trace?: never;
     };
+    "/api/v1/document-lifecycle-requests/{request_id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_document_lifecycle_requests_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document-lifecycle-requests/{request_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_document_lifecycle_requests_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document-lifecycle-requests/{request_id}/reject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_document_lifecycle_requests_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{document_id}/": {
         parameters: {
             query?: never;
@@ -175,6 +223,38 @@ export interface paths {
         get: operations["documents_download"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/lifecycle-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["documents_lifecycle_request_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/restore/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["documents_restore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -730,6 +810,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description * `archive` - Archive
+         *     * `permanent_delete` - Permanent delete
+         * @enum {string}
+         */
+        ActionEnum: "archive" | "permanent_delete";
         ConfirmVerificationRequest: {
             token: string;
         };
@@ -746,12 +832,49 @@ export interface components {
         CsrfToken: {
             csrf_token: string;
         };
+        DocumentLifecycleAction: {
+            action: components["schemas"]["ActionEnum"];
+        };
         /**
-         * @description * `keep_passport` - Keep passport value
-         *     * `apply_answer` - Apply questionnaire answer
+         * @description * `approved` - Approved
+         *     * `rejected` - Rejected
          * @enum {string}
          */
-        DecisionEnum: "keep_passport" | "apply_answer";
+        DocumentLifecycleApprovalDecisionEnum: "approved" | "rejected";
+        DocumentLifecycleApprovalResponse: {
+            /** Format: uuid */
+            readonly user_id: string;
+            readonly decision: components["schemas"]["DocumentLifecycleApprovalDecisionEnum"];
+            /** Format: date-time */
+            readonly decided_at: string;
+        };
+        DocumentLifecycleRequestResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly document_id: string;
+            readonly action: components["schemas"]["ActionEnum"];
+            /** Format: uuid */
+            readonly initiated_by_id: string;
+            readonly status: components["schemas"]["DocumentLifecycleRequestResponseStatusEnum"];
+            readonly approvals: components["schemas"]["DocumentLifecycleApprovalResponse"][];
+            readonly viewer_decision: (components["schemas"]["DocumentLifecycleApprovalDecisionEnum"] | components["schemas"]["NullEnum"]) | null;
+            /** Format: date-time */
+            readonly deletion_after: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly completed_at: string | null;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `approved` - Approved
+         *     * `rejected` - Rejected
+         *     * `cancelled` - Cancelled
+         *     * `completed` - Completed
+         * @enum {string}
+         */
+        DocumentLifecycleRequestResponseStatusEnum: "pending" | "approved" | "rejected" | "cancelled" | "completed";
         DocumentListResponse: {
             count: number;
             /** Format: uri */
@@ -779,6 +902,7 @@ export interface components {
             readonly archived_at: string | null;
             /** Format: date-time */
             readonly deleted_at: string | null;
+            readonly lifecycle_request: components["schemas"]["DocumentLifecycleRequestResponse"] | null;
         };
         DocumentUpload: {
             /** Format: uri */
@@ -1279,6 +1403,12 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `keep_passport` - Keep passport value
+         *     * `apply_answer` - Apply questionnaire answer
+         * @enum {string}
+         */
+        QuestionnaireConflictDecisionEnum: "keep_passport" | "apply_answer";
         QuestionnaireConflictResponse: {
             /** Format: uuid */
             readonly id: string;
@@ -1289,7 +1419,7 @@ export interface components {
             readonly passport_value: unknown;
             readonly answer_value: unknown;
             readonly status: components["schemas"]["QuestionnaireConflictStatusEnum"];
-            readonly decision: (components["schemas"]["DecisionEnum"] | components["schemas"]["NullEnum"]) | null;
+            readonly decision: (components["schemas"]["QuestionnaireConflictDecisionEnum"] | components["schemas"]["NullEnum"]) | null;
             /** Format: uuid */
             readonly reviewed_by_id: string | null;
             /** Format: date-time */
@@ -1404,7 +1534,7 @@ export interface components {
             detail: string;
         };
         ResolveQuestionnaireConflict: {
-            decision: components["schemas"]["DecisionEnum"];
+            decision: components["schemas"]["QuestionnaireConflictDecisionEnum"];
             expected_passport_version: number;
         };
         /**
@@ -1892,6 +2022,189 @@ export interface operations {
             };
         };
     };
+    v1_document_lifecycle_requests_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLifecycleRequestResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    v1_document_lifecycle_requests_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLifecycleRequestResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    v1_document_lifecycle_requests_reject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLifecycleRequestResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     documents_retrieve: {
         parameters: {
             query?: never;
@@ -1960,6 +2273,134 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    documents_lifecycle_request_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentLifecycleAction"];
+                "application/x-www-form-urlencoded": components["schemas"]["DocumentLifecycleAction"];
+                "multipart/form-data": components["schemas"]["DocumentLifecycleAction"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLifecycleRequestResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    documents_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -6,6 +6,10 @@ urlpatterns = [
     path("api/v1/health/", include("apps.health.urls")),
     path("api/v1/auth/", include("apps.accounts.api.urls")),
     path("api/v1/invitations/", include("apps.invitations.api.public_urls")),
+    path(
+        "api/v1/document-lifecycle-requests/",
+        include("apps.documents.api.lifecycle_urls"),
+    ),
     path("api/v1/questionnaire/", include("apps.questionnaire.api.urls")),
     path("api/v1/documents/", include("apps.documents.api.document_urls")),
     path("api/v1/", include("apps.project_state.api.urls")),

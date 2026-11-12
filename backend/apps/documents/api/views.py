@@ -2,7 +2,12 @@ from django.http import FileResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import (
+    APIException,
+    NotFound,
+    PermissionDenied,
+    ValidationError,
+)
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -13,20 +18,28 @@ from apps.accounts.api.core.permissions import (
 )
 from apps.accounts.api.core.serializers import ErrorEnvelopeSerializer
 from apps.documents.services import (
+    DocumentLifecyclePermissionError,
     DocumentNotFoundError,
     DocumentStateConflictError,
     DocumentTooLargeError,
     UnsupportedDocumentError,
+    cancel_lifecycle_request,
+    decide_lifecycle_request,
     get_document,
     list_documents,
     open_document_download,
+    request_lifecycle_action,
+    restore_document,
     upload_document,
 )
 
 from .serializers import (
+    DocumentLifecycleActionSerializer,
+    DocumentLifecycleRequestResponseSerializer,
     DocumentListResponseSerializer,
     DocumentResponseSerializer,
     DocumentUploadSerializer,
+    EmptyLifecycleActionSerializer,
 )
 
 
@@ -46,6 +59,25 @@ class DocumentMutationConflict(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_detail = "Documents can only be uploaded to draft or active projects."
     default_code = "conflict"
+
+
+class DocumentLifecycleConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "The document lifecycle state does not allow this action."
+    default_code = "conflict"
+
+
+def _run_lifecycle_action(operation, **kwargs):
+    try:
+        return operation(**kwargs)
+    except DocumentNotFoundError as exc:
+        raise NotFound("Document or lifecycle request not found.") from exc
+    except DocumentLifecyclePermissionError as exc:
+        raise PermissionDenied(
+            "Only the other active project member may decide."
+        ) from exc
+    except DocumentStateConflictError as exc:
+        raise DocumentLifecycleConflict() from exc
 
 
 def _query_int(request, *, name, default):
@@ -106,7 +138,11 @@ class ProjectDocumentListCreateView(CsrfSanitizingAPIView):
                 "count": page.count,
                 "next": _page_url(request, page.next_page),
                 "previous": _page_url(request, page.previous_page),
-                "results": DocumentResponseSerializer(page.results, many=True).data,
+                "results": DocumentResponseSerializer(
+                    page.results,
+                    many=True,
+                    context={"request": request},
+                ).data,
             }
         )
 
@@ -204,3 +240,138 @@ class DocumentDownloadView(CsrfSanitizingAPIView):
         response["X-Content-Type-Options"] = "nosniff"
         response["Cache-Control"] = "private, no-store"
         return response
+
+
+class DocumentLifecycleRequestCreateView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["documents"],
+        operation_id="documents_lifecycle_request_create",
+        request=DocumentLifecycleActionSerializer,
+        responses={
+            201: DocumentLifecycleRequestResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, document_id):
+        serializer = DocumentLifecycleActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lifecycle_request = _run_lifecycle_action(
+            request_lifecycle_action,
+            document_id=document_id,
+            actor=request.user,
+            action=serializer.validated_data["action"],
+        )
+        return Response(
+            DocumentLifecycleRequestResponseSerializer(
+                lifecycle_request,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class DocumentLifecycleDecisionView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+    decision = None
+
+    @extend_schema(
+        tags=["documents"],
+        request=EmptyLifecycleActionSerializer,
+        responses={
+            200: DocumentLifecycleRequestResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, request_id):
+        serializer = EmptyLifecycleActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lifecycle_request = _run_lifecycle_action(
+            decide_lifecycle_request,
+            request_id=request_id,
+            actor=request.user,
+            decision=self.decision,
+        )
+        return Response(
+            DocumentLifecycleRequestResponseSerializer(
+                lifecycle_request,
+                context={"request": request},
+            ).data
+        )
+
+
+class DocumentLifecycleApproveView(DocumentLifecycleDecisionView):
+    decision = "approved"
+
+
+class DocumentLifecycleRejectView(DocumentLifecycleDecisionView):
+    decision = "rejected"
+
+
+class DocumentLifecycleCancelView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["documents"],
+        request=EmptyLifecycleActionSerializer,
+        responses={
+            200: DocumentLifecycleRequestResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, request_id):
+        serializer = EmptyLifecycleActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lifecycle_request = _run_lifecycle_action(
+            cancel_lifecycle_request,
+            request_id=request_id,
+            actor=request.user,
+        )
+        return Response(
+            DocumentLifecycleRequestResponseSerializer(
+                lifecycle_request,
+                context={"request": request},
+            ).data
+        )
+
+
+class DocumentRestoreView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["documents"],
+        operation_id="documents_restore",
+        request=EmptyLifecycleActionSerializer,
+        responses={
+            200: DocumentResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, document_id):
+        serializer = EmptyLifecycleActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = _run_lifecycle_action(
+            restore_document,
+            document_id=document_id,
+            actor=request.user,
+        )
+        return Response(
+            DocumentResponseSerializer(document, context={"request": request}).data
+        )

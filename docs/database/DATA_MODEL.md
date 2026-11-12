@@ -3,7 +3,7 @@
 **Status:** Logical model baseline; detailed field constraints must be
 finalized before migrations  
 **Database:** PostgreSQL  
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-12
 
 ## 1. Database conventions
 
@@ -385,6 +385,27 @@ The database stores metadata and lifecycle rows only. File bytes are
 stored through Django's default storage on the persistent local media
 volume. Upload creates the document with `processing_status=queued`;
 Stage 09 owns extraction and subsequent processing transitions.
+Lifecycle is an archive-first state machine. Archive requests may start
+only for `active` documents and move them to `archive_pending` until the
+other active participant approves or rejects. Approval moves the
+document to `archived`; rejection returns it to `active`. Permanent
+deletion requests may start only for `archived` documents. The document
+stays archived until the second participant approves, then becomes
+`deletion_pending` and receives a `deletion_after` deadline exactly 30
+days from that second approval. Cancellation before the deadline returns
+it to `archived`; the deadline is exclusive. Restore is a separate
+transition from `archived` to `active`. If a permanent-delete request is
+still pending with only the initiator's approval, restore marks that
+request `cancelled` in the same transaction; a request already approved
+by both participants must be explicitly cancelled before restoration.
+
+When a due deletion completes, storage bytes and existing derivatives
+are removed. The `Document` row remains with `lifecycle_status=deleted`,
+`deleted_at`, an empty original filename/MIME type, zero size, and the
+SHA-256 digest of empty content. Its internal storage key remains unique
+and is never exposed. Lifecycle request/approval rows and one
+content-free `ProjectAuditLog` event preserve the minimal consent and
+deletion audit trail. No deleted content is written to audit metadata.
 
 ### `DocumentChunk`
 
@@ -415,6 +436,15 @@ Fields:
 - `deletion_after` — nullable timestamp
 - `created_at`
 - `completed_at`, nullable
+
+Request statuses are `pending`, `approved`, `rejected`, `cancelled`, and
+`completed`. Creation records an `approved` row for the initiator and
+leaves the request `pending`. The other active participant’s decision
+sets `approved` or `rejected`. For a permanent-delete request,
+`deletion_after` is null until that second approval and is set to
+approval time plus 30 days in the same transaction. Completion is
+recorded only after the due sweep removes source data. Cancellation is
+allowed only when the current time is strictly earlier than the deadline.
 
 ### `DocumentLifecycleApproval`
 

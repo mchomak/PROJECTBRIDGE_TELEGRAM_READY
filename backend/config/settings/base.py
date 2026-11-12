@@ -98,6 +98,12 @@ CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_EAGER_PROPAGATES = False
+CELERY_BEAT_SCHEDULE = {
+    "document-lifecycle-deletion-sweep": {
+        "task": "apps.documents.tasks.process_expired_document_deletions",
+        "schedule": 300.0,
+    }
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
@@ -128,6 +134,12 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "ProjectBridge operational API scaffold.",
     "VERSION": "1.0.0",
     "ENUM_NAME_OVERRIDES": {
+        "DocumentLifecycleApprovalDecisionEnum": (
+            "apps.documents.models.DocumentLifecycleDecision.choices"
+        ),
+        "QuestionnaireConflictDecisionEnum": (
+            "apps.questionnaire.models.QuestionnaireConflictDecision.choices"
+        ),
         "ProjectStatusEnum": "apps.projects.models.ProjectStatus.choices",
         "ProjectInvitationStatusEnum": (
             "apps.invitations.models.ProjectInvitationStatus.choices"
