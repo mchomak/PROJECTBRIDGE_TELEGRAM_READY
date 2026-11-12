@@ -117,10 +117,10 @@ silently.
     and Stage 07 on 2026-11-12:** Invitation creation is limited to
     20/hour/executor,
     preview to 30/hour/IP, and acceptance to 10/hour/user through the
-    shared Redis cache. See ADR-011. Chat sends are limited to 60 per
-    user per fixed UTC minute through one Redis counter. Stage 07 exposes
-    the limiter for REST; Stage 08 will wire the Channels consumer to the
-    same user-scoped key. Upload and AI action limits remain open. Stage 02
+    shared Redis cache. See ADR-011. New chat submissions are limited to
+    60 per user per fixed UTC minute through one Redis counter and are
+    submitted through REST; WebSocket is delivery-only. Upload and AI
+    action limits remain open. Stage 02
     authentication scopes remain
     `register` 5/hour, `login` 10/minute, `resend` 3/hour, and `confirm`
     10/hour through the shared cache.

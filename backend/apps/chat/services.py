@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -49,6 +51,34 @@ class ChatMessageConflictError(Exception):
 
 class ChatMessageRateLimitError(Exception):
     """The user exceeded the project chat send rate limit."""
+
+
+def project_chat_group_name(project_id):
+    """Return the Channels group name for one project chat."""
+    project_uuid = project_id if isinstance(project_id, UUID) else UUID(str(project_id))
+    return f"project_chat_{project_uuid.hex}"
+
+
+def _publish_message_created(*, project_id, message):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        project_chat_group_name(project_id),
+        {
+            "type": "chat.message_created",
+            "message": {
+                "id": str(message.pk),
+                "project_id": str(message.project_id),
+                "sender_id": str(message.sender_id),
+                "content": message.content,
+                "message_type": message.message_type,
+                "client_message_id": str(message.client_message_id),
+                "created_at": message.created_at.isoformat(),
+                "updated_at": (
+                    message.updated_at.isoformat() if message.updated_at else None
+                ),
+            },
+        },
+    )
 
 
 def _normalize_message_content(content):
@@ -232,5 +262,8 @@ def send_message(*, project_id, actor, client_message_id, content):
         target_type="message",
         target_id=message.pk,
         metadata={"role": role},
+    )
+    transaction.on_commit(
+        lambda: _publish_message_created(project_id=project.pk, message=message)
     )
     return SendMessageResult(message=message, created=True)

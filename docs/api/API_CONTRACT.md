@@ -321,10 +321,9 @@ POST accepts `client_message_id` (UUID) and non-blank `content` (up to
 only while the project is active. A new message returns `201`; retrying
 the same ID and normalized content returns the original message with
 `200`, while reusing that ID with different content returns `409`.
-New sends are limited to 60 per user per fixed UTC minute via a shared
-Redis counter; exceeding the limit returns `429`. Stage 07 provides this
-user-scoped limiter to REST, and Stage 08 will connect WebSocket sends to
-the same counter. Idempotent replays do not count as new sends. Audit
+New REST sends are limited to 60 per user per fixed UTC minute via a
+shared Redis counter; exceeding the limit returns `429`. The limiter is
+user-scoped and idempotent replays do not count as new sends. Audit
 metadata records the actor role and message identifier, never message
 content.
 
@@ -333,9 +332,15 @@ WebSocket:
 `/ws/v1/projects/{project_id}/chat/`
 
 The WebSocket connection uses the authenticated session and must verify
-active project membership. REST is used for persistence and message
-submission; WebSocket delivers events such as `message.created`. After
-reconnecting, clients retrieve missed messages through REST.
+active project membership. It joins only the matching project group.
+REST owns persistence, history, and message submission; the WebSocket is
+delivery-only and does not accept client message commands. A newly
+committed message is broadcast to that project group in an envelope with
+`type: "message.created"` and a `message` property containing the
+`MessageResponse` fields above. Publication happens after the database
+transaction commits, and an idempotent REST replay does not publish
+another event. After connecting or reconnecting, clients retrieve the
+latest history through REST and deduplicate live events by `message.id`.
 
 REST remains the source of truth for messages. WebSocket delivery is
 implemented separately; clients recover missed messages through the

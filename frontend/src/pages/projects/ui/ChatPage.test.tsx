@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { User } from '../../../entities/user';
 import { ChatPage } from './ChatPage';
 
@@ -19,6 +19,33 @@ const executor: User = {
   email_verified: true,
   email_verified_at: '2026-11-12T00:00:00Z',
 };
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  private closed = false;
+
+  constructor(readonly url: string) {
+    MockWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      if (!this.closed) this.onopen?.(new Event('open'));
+    });
+  }
+
+  close(code = 1000, reason = '') {
+    if (this.closed) return;
+    this.closed = true;
+    this.onclose?.(new CloseEvent('close', { code, reason }));
+  }
+
+  receive(payload: unknown) {
+    this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(payload) }));
+  }
+}
 
 function message(overrides: Record<string, unknown> = {}) {
   return {
@@ -150,6 +177,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+beforeEach(() => {
+  MockWebSocket.instances = [];
+  vi.stubGlobal('WebSocket', MockWebSocket);
+});
+
 test('shows a loading state while project chat requests are pending', async () => {
   const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
   renderChatPage(fetchMock);
@@ -237,6 +269,101 @@ test('keeps a failed draft and retries with the original client ID and content',
   await waitFor(() => expect(sentRequests).toHaveLength(2));
   expect(sentRequests[1]).toEqual(sentRequests[0]);
   expect(await screen.findByText('Sent')).toBeTruthy();
+});
+
+test('preserves compose text after a REST rate limit and can retry the message', async () => {
+  const sentRequests: Array<{ client_message_id: string; content: string }> = [];
+  const fetchMock = chatFetch((payload) => {
+    sentRequests.push(payload);
+    if (sentRequests.length === 1) {
+      return jsonResponse(
+        {
+          code: 'throttled',
+          detail: 'Chat send rate limit exceeded.',
+          errors: null,
+          request_id: 'test',
+        },
+        429,
+      );
+    }
+    return jsonResponse(
+      message({
+        id: newerMessageId,
+        sender_id: executorId,
+        client_message_id: payload.client_message_id,
+        content: payload.content,
+        created_at: '2026-11-12T12:02:00Z',
+      }),
+      201,
+    );
+  });
+  renderChatPage(fetchMock);
+
+  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  const content = 'Keep this message while the chat limit resets.';
+  fireEvent.change(composer, { target: { value: content } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+  expect((await screen.findByRole('alert')).textContent).toContain('rate limit');
+  expect(composer.value).toBe(content);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+  await waitFor(() => expect(sentRequests).toHaveLength(2));
+  expect(sentRequests[1]).toEqual(sentRequests[0]);
+  await waitFor(() => expect(composer.value).toBe(''));
+});
+
+test('deduplicates WebSocket events and reloads REST history after reconnect', async () => {
+  const missedMessage = message({
+    id: newerMessageId,
+    content: 'Recovered after reconnect.',
+    created_at: '2026-11-12T12:03:00Z',
+  });
+  const liveMessage = message({
+    id: 'ebdbf186-f5c6-45e6-87b1-4767a7b53b83',
+    content: 'Delivered live.',
+    created_at: '2026-11-12T12:02:00Z',
+  });
+  let includeHistory = false;
+  let historyCalls = 0;
+  const baseFetch = chatFetch();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (
+      url.startsWith(`/api/v1/projects/${projectId}/messages/`) &&
+      (init?.method ?? 'GET') === 'GET'
+    ) {
+      historyCalls += 1;
+      return jsonResponse({
+        next: null,
+        previous: null,
+        results: includeHistory ? [liveMessage, missedMessage] : [],
+      });
+    }
+    return baseFetch(input, init);
+  });
+  renderChatPage(fetchMock);
+
+  expect(await screen.findByRole('heading', { name: 'No messages yet' })).toBeTruthy();
+  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+  const firstSocket = MockWebSocket.instances[0];
+  expect(firstSocket.url).toBe(`ws://localhost:3000/ws/v1/projects/${projectId}/chat/`);
+
+  act(() => firstSocket.receive({ type: 'message.created', message: liveMessage }));
+  const list = await screen.findByRole('list', { name: 'Project messages' });
+  expect(await within(list).findByText('Delivered live.')).toBeTruthy();
+  act(() => firstSocket.receive({ type: 'message.created', message: liveMessage }));
+  expect(within(list).getAllByRole('article')).toHaveLength(1);
+
+  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  fireEvent.change(composer, { target: { value: 'Keep composing through reconnect.' } });
+  includeHistory = true;
+  act(() => firstSocket.close(1006, 'Network disconnected'));
+
+  await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+  expect(await within(list).findByText('Recovered after reconnect.')).toBeTruthy();
+  await waitFor(() => expect(historyCalls).toBeGreaterThan(1));
+  expect(within(list).getAllByRole('article')).toHaveLength(2);
+  expect(composer.value).toBe('Keep composing through reconnect.');
 });
 
 test('shows an empty message state and disables sending for a completed project', async () => {

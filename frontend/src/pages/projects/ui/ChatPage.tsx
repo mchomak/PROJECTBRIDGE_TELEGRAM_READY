@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
 import { useProject, useProjectMembers, type ProjectMember } from '../../../entities/project';
 import {
@@ -34,6 +34,25 @@ function messageTime(value: string): string {
   }).format(new Date(value));
 }
 
+function messageFromEvent(data: string, projectId: string): ChatMessage | null {
+  try {
+    const event: unknown = JSON.parse(data);
+    if (typeof event !== 'object' || event === null) return null;
+    const envelope = event as { type?: unknown; message?: ChatMessage };
+    if (
+      envelope.type !== 'message.created' ||
+      !envelope.message ||
+      envelope.message.project_id !== projectId ||
+      typeof envelope.message.id !== 'string'
+    ) {
+      return null;
+    }
+    return envelope.message;
+  } catch {
+    return null;
+  }
+}
+
 export function ChatPage() {
   const { projectId = '' } = useParams();
   const user = useOutletContext<User>();
@@ -47,7 +66,60 @@ export function ChatPage() {
   const project = projectQuery.data;
   const members = membersQuery.data ?? [];
   const currentMember = members.find((member) => member.user_id === user.id);
+  const hasActiveMembership = Boolean(currentMember);
+  const historyRefetch = useRef(historyQuery.refetch);
+  historyRefetch.current = historyQuery.refetch;
   const canSend = project?.status === 'active';
+
+  useEffect(() => {
+    if (!projectId || !hasActiveMembership) return;
+
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectDelay = 250;
+    let socket: WebSocket | undefined;
+
+    function connect() {
+      if (disposed) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const nextSocket = new WebSocket(
+        `${protocol}//${window.location.host}/ws/v1/projects/${encodeURIComponent(projectId)}/chat/`,
+      );
+      socket = nextSocket;
+      nextSocket.onopen = () => {
+        void historyRefetch.current();
+        reconnectDelay = 250;
+      };
+      nextSocket.onmessage = (event) => {
+        const message = messageFromEvent(event.data, projectId);
+        if (!message) return;
+        setLocalMessages((current) => {
+          const existingIndex = current.findIndex(
+            (entry) =>
+              entry.id === message.id ||
+              (entry.sender_id === message.sender_id &&
+                entry.client_message_id === message.client_message_id),
+          );
+          const delivered: ChatEntry = { ...message, delivery_state: 'sent' };
+          if (existingIndex === -1) return [...current, delivered];
+          return current.map((entry, index) => (index === existingIndex ? delivered : entry));
+        });
+      };
+      nextSocket.onclose = (event) => {
+        if (disposed || event.code === 4401 || event.code === 4403) return;
+        reconnectTimer = setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+      };
+      nextSocket.onerror = () => nextSocket.close();
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [hasActiveMembership, projectId]);
 
   function retryPage() {
     void Promise.all([projectQuery.refetch(), membersQuery.refetch(), historyQuery.refetch()]);
@@ -81,8 +153,6 @@ export function ChatPage() {
           )
         : [...current, pending];
     });
-    if (!existingClientMessageId) setDraft('');
-
     try {
       const saved = await sendMessage.mutateAsync(payload);
       setLocalMessages((current) =>
@@ -92,6 +162,7 @@ export function ChatPage() {
             : message,
         ),
       );
+      setDraft((current) => (current.trim() === content ? '' : current));
     } catch (error) {
       setLocalMessages((current) =>
         current.map((message) =>

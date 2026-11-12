@@ -114,11 +114,13 @@ read uncommitted data. Tasks must be retry-safe and should use stable
 object IDs rather than large serialized model objects.
 
 The chat app owns Message persistence and its project-scoped read/write
-services. Stage 07 exposes `enforce_chat_send_rate_limit`, which uses the
-shared Redis cache and a user-scoped fixed UTC-minute counter for REST
-sends. Stage 08 will wire the Channels consumer to this helper and the
-same user-scoped key so REST and WebSocket sends share the 60-per-minute
-limit once that consumer is implemented.
+services. `enforce_chat_send_rate_limit` uses the shared Redis cache and
+a user-scoped fixed UTC-minute counter for new REST submissions.
+WebSockets are delivery-only: the Channels consumer authenticates the
+session, verifies active project membership, and joins the matching
+project group. The send service publishes `message.created` through
+`transaction.on_commit`; idempotent replays do not publish again. There
+is no WebSocket message submission or separate WebSocket send limit.
 
 For critical background events, assess a transactional outbox if
 measured reliability requirements exceed the simpler

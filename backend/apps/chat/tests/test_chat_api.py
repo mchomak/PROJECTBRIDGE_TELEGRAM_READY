@@ -1,9 +1,15 @@
 from datetime import timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from asgiref.sync import async_to_sync, sync_to_async
+from channels.testing import WebsocketCommunicator
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import transaction
+from django.test import Client
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -11,6 +17,7 @@ from apps.chat.models import Message
 from apps.chat.services import send_message
 from apps.projects.models import Project, ProjectMember, ProjectStatus
 from apps.projects.services import archive_project, complete_project, create_project
+from config.asgi import application
 
 
 def _client(user):
@@ -48,6 +55,13 @@ def chat_api_context():
 
 def _messages_url(project):
     return f"/api/v1/projects/{project.pk}/messages/"
+
+
+def _websocket_headers(user):
+    client = Client()
+    client.force_login(user)
+    cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
+    return [(b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode())]
 
 
 @pytest.mark.django_db
@@ -238,3 +252,107 @@ def test_send_rate_limit_returns_429_without_persisting(chat_api_context):
 
     assert response.status_code == 429
     assert Message.objects.filter(project=project).count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_rejects_anonymous_connections(chat_api_context):
+    project, _, _, _, _ = chat_api_context
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+    )
+
+    connected, _ = async_to_sync(communicator.connect)()
+
+    assert connected is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_rejects_authenticated_nonmembers(chat_api_context):
+    project, _, _, outsider, _ = chat_api_context
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=_websocket_headers(outsider),
+    )
+
+    connected, _ = async_to_sync(communicator.connect)()
+
+    assert connected is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_delivers_committed_events_only_to_the_matching_project(
+    chat_api_context,
+):
+    project, executor, customer, outsider, other_project = chat_api_context
+    customer_socket = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=_websocket_headers(customer),
+    )
+    other_project_socket = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{other_project.pk}/chat/",
+        headers=_websocket_headers(outsider),
+    )
+    client_message_id = uuid4()
+
+    async def verify_delivery():
+        customer_connected, _ = await customer_socket.connect()
+        other_connected, _ = await other_project_socket.connect()
+        assert customer_connected is True
+        assert other_connected is True
+
+        created = await sync_to_async(send_message)(
+            project_id=project.pk,
+            actor=executor,
+            client_message_id=client_message_id,
+            content="A committed project update.",
+        )
+        replay = await sync_to_async(send_message)(
+            project_id=project.pk,
+            actor=executor,
+            client_message_id=client_message_id,
+            content="A committed project update.",
+        )
+
+        event = await customer_socket.receive_json_from(timeout=1)
+        assert event == {
+            "type": "message.created",
+            "message": {
+                "id": str(created.message.pk),
+                "project_id": str(project.pk),
+                "sender_id": str(executor.pk),
+                "content": "A committed project update.",
+                "message_type": "text",
+                "client_message_id": str(client_message_id),
+                "created_at": created.message.created_at.isoformat(),
+                "updated_at": None,
+            },
+        }
+        assert replay.created is False
+        assert await customer_socket.receive_nothing(timeout=0.05) is True
+        assert await other_project_socket.receive_nothing(timeout=0.05) is True
+
+        await customer_socket.disconnect()
+        await other_project_socket.disconnect()
+
+    async_to_sync(verify_delivery)()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_service_publishes_after_the_outer_transaction_commits(chat_api_context):
+    project, executor, _, _, _ = chat_api_context
+
+    with patch("apps.chat.services._publish_message_created") as publish:
+        with transaction.atomic():
+            result = send_message(
+                project_id=project.pk,
+                actor=executor,
+                client_message_id=uuid4(),
+                content="Wait for the outer commit.",
+            )
+            publish.assert_not_called()
+
+        publish.assert_called_once_with(project_id=project.pk, message=result.message)
