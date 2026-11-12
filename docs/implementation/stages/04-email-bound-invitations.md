@@ -23,7 +23,8 @@ Stages 02 and 03.
 - Normalize invited email addresses consistently.
 - Generate high-entropy invitation tokens and store only token hashes.
 - Support expiration, revocation, preview, and acceptance.
-- Return the raw token only at creation time.
+- Generate the raw token at creation time and send it only in the
+  invitation email link; never return it in an API response.
 - Require the authenticated user’s verified email to match the invited
   email.
 - Enforce one active customer membership per project.

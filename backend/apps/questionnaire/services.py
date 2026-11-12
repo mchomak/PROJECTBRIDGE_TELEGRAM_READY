@@ -52,6 +52,10 @@ class QuestionnaireStateConflictError(Exception):
     """The project or draft state does not allow this questionnaire action."""
 
 
+class QuestionnairePassportStructureConflictError(QuestionnaireStateConflictError):
+    """A passport value blocks a nested mapping without replacing existing data."""
+
+
 class QuestionnairePassportVersionConflictError(Exception):
     """The passport changed after the customer began this questionnaire draft."""
 
@@ -299,11 +303,15 @@ def _set_path_change(passport, changes, mapped_field, value):
 
     root = deepcopy(changes.get(root_field, getattr(passport, root_field)))
     if not isinstance(root, dict):
+        if not _is_empty_answer(root):
+            raise QuestionnairePassportStructureConflictError
         root = {}
     current = root
     for part in parts[1:-1]:
         nested = current.get(part)
         if not isinstance(nested, dict):
+            if not _is_empty_answer(nested):
+                raise QuestionnairePassportStructureConflictError
             nested = {}
             current[part] = nested
         current = nested

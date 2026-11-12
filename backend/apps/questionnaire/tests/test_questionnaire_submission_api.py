@@ -95,6 +95,31 @@ def test_customer_submits_completed_answers_and_cannot_edit_the_immutable_versio
 
 
 @pytest.mark.django_db
+def test_submission_reports_passport_structure_conflict_without_losing_data():
+    from apps.projects.models import ProjectPassport
+    from apps.questionnaire.models import QuestionnaireSubmission
+
+    project, _, customer, _ = _project_with_members()
+    ProjectPassport.objects.filter(project=project).update(
+        additional_data={"questionnaire": "existing information"}
+    )
+    client, submission_id = _start_and_save(project, customer)
+
+    response = client.post(
+        f"/api/v1/questionnaire/submissions/{submission_id}/submit/",
+        {},
+        format="json",
+    )
+
+    assert response.status_code == 409
+    assert "Ask the executor to review the passport" in response.data["detail"]
+    assert QuestionnaireSubmission.objects.get(pk=submission_id).status == "draft"
+    assert ProjectPassport.objects.get(project=project).additional_data == {
+        "questionnaire": "existing information"
+    }
+
+
+@pytest.mark.django_db
 def test_stale_submission_returns_conflict_and_keeps_the_draft_editable():
     from apps.projects.models import ProjectPassport
     from apps.projects.services import update_passport

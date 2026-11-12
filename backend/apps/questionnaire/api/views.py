@@ -18,6 +18,7 @@ from apps.questionnaire.schemas.registry import QuestionnaireSchemaError
 from apps.questionnaire.services import (
     QuestionnaireConfirmationRequiredError,
     QuestionnaireNotFoundError,
+    QuestionnairePassportStructureConflictError,
     QuestionnairePassportVersionConflictError,
     QuestionnairePermissionError,
     QuestionnaireStateConflictError,
@@ -58,6 +59,15 @@ class QuestionnairePassportConflict(APIException):
     default_code = "conflict"
 
 
+class QuestionnairePassportStructureConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = (
+        "The project passport contains data that blocks this questionnaire mapping. "
+        "Ask the executor to review the passport before trying again."
+    )
+    default_code = "conflict"
+
+
 def _translate_service_error(error):
     if isinstance(error, QuestionnaireNotFoundError):
         raise NotFound("The questionnaire is unavailable to your account.") from None
@@ -65,6 +75,8 @@ def _translate_service_error(error):
         raise PermissionDenied(
             "You do not have permission for this questionnaire action."
         ) from None
+    if isinstance(error, QuestionnairePassportStructureConflictError):
+        raise QuestionnairePassportStructureConflict from None
     if isinstance(error, QuestionnaireStateConflictError):
         raise QuestionnaireConflict from None
     if isinstance(error, QuestionnairePassportVersionConflictError):

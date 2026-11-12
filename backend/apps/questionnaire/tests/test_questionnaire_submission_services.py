@@ -198,6 +198,38 @@ def test_empty_optional_answers_do_not_clear_passport_and_differing_values_confl
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "additional_data",
+    [
+        "existing data",
+        {"questionnaire": "existing questionnaire data"},
+        {"questionnaire": {"website": ["existing website data"]}},
+    ],
+)
+def test_submission_preserves_non_object_passport_values_in_mapping_path(
+    additional_data,
+):
+    from apps.projects.models import ProjectPassport
+    from apps.questionnaire.services import (
+        QuestionnaireStateConflictError,
+        submit_submission,
+    )
+
+    project, _, customer, draft = _start_complete_draft(
+        passport_changes={"additional_data": additional_data}
+    )
+
+    with pytest.raises(QuestionnaireStateConflictError):
+        submit_submission(submission_id=draft.pk, actor=customer)
+
+    draft.refresh_from_db()
+    passport = ProjectPassport.objects.get(project=project)
+    assert draft.status == "draft"
+    assert passport.additional_data == additional_data
+    assert passport.version == 1
+
+
+@pytest.mark.django_db
 def test_stale_passport_version_rolls_back_submission_and_keeps_editable_draft():
     from apps.projects.models import ProjectPassport
     from apps.projects.services import update_passport
