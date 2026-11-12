@@ -61,7 +61,14 @@ def _websocket_headers(user):
     client = Client()
     client.force_login(user)
     cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
-    return [(b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode())]
+    return [
+        (b"origin", settings.FRONTEND_BASE_URL.encode()),
+        (b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode()),
+    ]
+
+
+def _websocket_origin_header(origin):
+    return [(b"origin", origin.encode())]
 
 
 @pytest.mark.django_db
@@ -260,6 +267,95 @@ def test_chat_websocket_rejects_anonymous_connections(chat_api_context):
     communicator = WebsocketCommunicator(
         application,
         f"/ws/v1/projects/{project.pk}/chat/",
+        headers=_websocket_origin_header(settings.FRONTEND_BASE_URL),
+    )
+
+    connected, _ = async_to_sync(communicator.connect)()
+
+    assert connected is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_accepts_configured_frontend_origin(chat_api_context):
+    project, executor, _, _, _ = chat_api_context
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=_websocket_headers(executor),
+    )
+
+    async def verify_connection():
+        connected, _ = await communicator.connect()
+        if connected:
+            await communicator.disconnect()
+        return connected
+
+    connected = async_to_sync(verify_connection)()
+
+    assert connected is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_accepts_distinct_csrf_trusted_origin(chat_api_context):
+    trusted_origin = next(
+        (
+            origin
+            for origin in settings.CSRF_TRUSTED_ORIGINS
+            if origin.rstrip("/") != settings.FRONTEND_BASE_URL.rstrip("/")
+        ),
+        None,
+    )
+    if trusted_origin is None:
+        pytest.skip("No CSRF_TRUSTED_ORIGINS entry differs from FRONTEND_BASE_URL.")
+
+    project, executor, _, _, _ = chat_api_context
+    headers = [
+        (b"origin", trusted_origin.encode()),
+        *_websocket_headers(executor)[1:],
+    ]
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=headers,
+    )
+
+    async def verify_connection():
+        connected, _ = await communicator.connect()
+        if connected:
+            await communicator.disconnect()
+        return connected
+
+    connected = async_to_sync(verify_connection)()
+
+    assert connected is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_rejects_foreign_origin(chat_api_context):
+    project, executor, _, _, _ = chat_api_context
+    headers = [
+        (b"origin", b"https://attacker.example"),
+        *_websocket_headers(executor)[1:],
+    ]
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=headers,
+    )
+
+    connected, _ = async_to_sync(communicator.connect)()
+
+    assert connected is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_chat_websocket_rejects_missing_origin(chat_api_context):
+    project, executor, _, _, _ = chat_api_context
+    headers = _websocket_headers(executor)[1:]
+    communicator = WebsocketCommunicator(
+        application,
+        f"/ws/v1/projects/{project.pk}/chat/",
+        headers=headers,
     )
 
     connected, _ = async_to_sync(communicator.connect)()

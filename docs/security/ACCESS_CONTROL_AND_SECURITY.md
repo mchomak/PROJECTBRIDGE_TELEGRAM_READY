@@ -162,14 +162,20 @@ storage.
 Every project-scoped REST endpoint must verify active project membership
 and the required role.
 
-Every WebSocket connection must independently verify:
+Every project-scoped chat WebSocket connection must independently verify:
 
+- browser `Origin` matches `FRONTEND_BASE_URL` or a configured
+  `CSRF_TRUSTED_ORIGINS` entry; requests with a missing or foreign origin
+  are rejected;
 - authenticated session;
 - active membership in the requested project;
 - permission to subscribe to the requested event stream.
 
 Never trust a project ID supplied by the client without checking
 membership.
+
+The originless `/ws/v1/health/` probe is a separate service check and is
+not routed through the project chat authentication or origin validator.
 
 ## 7. Secret management
 
