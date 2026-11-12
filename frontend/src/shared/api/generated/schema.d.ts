@@ -149,6 +149,38 @@ export interface paths {
         patch: operations["project_state_conflict_update"];
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["documents_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["documents_download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health/": {
         parameters: {
             query?: never;
@@ -288,6 +320,22 @@ export interface paths {
         get: operations["project_state_conflicts_list"];
         put?: never;
         post: operations["project_state_conflicts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/documents/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_documents_list"];
+        put?: never;
+        post: operations["project_documents_upload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -704,6 +752,38 @@ export interface components {
          * @enum {string}
          */
         DecisionEnum: "keep_passport" | "apply_answer";
+        DocumentListResponse: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["DocumentResponse"][];
+        };
+        DocumentResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            /** Format: uuid */
+            readonly uploaded_by_id: string;
+            readonly original_filename: string;
+            readonly mime_type: string;
+            readonly file_size: number;
+            readonly checksum_sha256: string;
+            readonly lifecycle_status: components["schemas"]["LifecycleStatusEnum"];
+            readonly processing_status: components["schemas"]["ProcessingStatusEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly archived_at: string | null;
+            /** Format: date-time */
+            readonly deleted_at: string | null;
+        };
+        DocumentUpload: {
+            /** Format: uri */
+            file: string;
+        };
         ErrorEnvelope: {
             code: string;
             detail: string;
@@ -821,6 +901,15 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        /**
+         * @description * `active` - Active
+         *     * `archive_pending` - Archive pending
+         *     * `archived` - Archived
+         *     * `deletion_pending` - Deletion pending
+         *     * `deleted` - Deleted
+         * @enum {string}
+         */
+        LifecycleStatusEnum: "active" | "archive_pending" | "archived" | "deletion_pending" | "deleted";
         MessageCreate: {
             /** Format: uuid */
             client_message_id: string;
@@ -944,6 +1033,15 @@ export interface components {
             due_date?: string | null;
             status?: components["schemas"]["TaskStatusEnum"];
         };
+        /**
+         * @description * `queued` - Queued
+         *     * `processing` - Processing
+         *     * `ready` - Ready
+         *     * `failed` - Failed
+         *     * `unsupported` - Unsupported
+         * @enum {string}
+         */
+        ProcessingStatusEnum: "queued" | "processing" | "ready" | "failed" | "unsupported";
         ProjectConflictCreate: {
             title: string;
             /** @default  */
@@ -1794,6 +1892,83 @@ export interface operations {
             };
         };
     };
+    documents_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    documents_download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "text/plain": string;
+                    "text/markdown": string;
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     health_check: {
         parameters: {
             query?: never;
@@ -2439,6 +2614,129 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_documents_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: "active" | "archived" | "deletion_pending";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentListResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_documents_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["DocumentUpload"];
+                "application/x-www-form-urlencoded": components["schemas"]["DocumentUpload"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

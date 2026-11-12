@@ -24,6 +24,10 @@ urlpatterns = [
         include("apps.questionnaire.api.project_urls"),
     ),
     path(
+        "<uuid:project_id>/documents/",
+        include("apps.documents.api.project_urls"),
+    ),
+    path(
         "<uuid:project_id>/invitations/",
         include("apps.invitations.api.urls"),
     ),

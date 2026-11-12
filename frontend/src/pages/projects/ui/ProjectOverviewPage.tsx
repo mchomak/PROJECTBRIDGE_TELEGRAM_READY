@@ -21,6 +21,7 @@ import {
   type PassportUpdate,
 } from '../../../features/projects';
 import { ApiError, getApiFieldErrors } from '../../../shared/api';
+import { ProjectDocumentsPanel } from './ProjectDocumentsPanel';
 
 type ProjectDraft = {
   name: string;
@@ -858,6 +859,10 @@ export function ProjectOverviewPage() {
           <PassportPanel projectId={project.id} canEdit={canEdit} />
         </section>
       </div>
+      <ProjectDocumentsPanel
+        canUpload={project.status === 'draft' || project.status === 'active'}
+        projectId={project.id}
+      />
     </main>
   );
 }

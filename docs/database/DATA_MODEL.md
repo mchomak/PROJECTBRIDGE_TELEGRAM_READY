@@ -365,10 +365,11 @@ Fields:
 - `project_id` — FK Project
 - `uploaded_by_id` — FK User
 - `original_filename`
-- `mime_type`
-- `file_size` — BIGINT
-- `checksum_sha256`
-- `storage_key` — internal generated storage path/key
+- `mime_type` — derived by the server from validated content and extension
+- `file_size` — nonnegative BIGINT, at most `20 * 1024 * 1024` bytes
+- `checksum_sha256` — server-computed lowercase SHA-256 hex digest
+- `storage_key` — unique internal UUID-based key; independent of the
+  display filename and never returned by the API
 - `lifecycle_status` — `active`, `archive_pending`, `archived`,
   `deletion_pending`, `deleted`
 - `processing_status` — `queued`, `processing`, `ready`, `failed`,
@@ -379,6 +380,11 @@ Fields:
 
 There is no document `visibility` field. All project documents are
 shared with both participants.
+
+The database stores metadata and lifecycle rows only. File bytes are
+stored through Django's default storage on the persistent local media
+volume. Upload creates the document with `processing_status=queued`;
+Stage 09 owns extraction and subsequent processing transitions.
 
 ### `DocumentChunk`
 

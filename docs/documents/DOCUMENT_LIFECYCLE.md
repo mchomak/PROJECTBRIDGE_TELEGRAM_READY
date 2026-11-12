@@ -23,42 +23,51 @@ documents do not exist.
 
 Limits:
 
-- Maximum file size: 20 MB per file.
+- Maximum file size: `20 * 1024 * 1024` bytes per file (20 MiB).
 - No OCR.
 - No audio transcription.
 - No video processing.
 - No image understanding.
 
-The server must enforce size and format limits. Client-side validation
-is only a usability aid.
+The server enforces the size limit and requires a supported extension to
+match detected content. It recognizes PDF signatures, DOCX ZIP
+containers with `[Content_Types].xml` and `word/document.xml`, and valid
+text content for TXT and Markdown. Browser-provided MIME types are not
+trusted. Client-side validation is only a usability aid.
+Zero-byte TXT and Markdown files are valid text documents and are stored
+with `processing_status=queued`.
 
 ## 3. Storage
 
 Store file bytes outside PostgreSQL.
 
-Local development uses a persistent Docker volume and a storage
-abstraction. Production may use S3-compatible object storage without
-changing document business logic.
+Local development uses Django's default storage rooted at `/app/media`,
+backed by the persistent Compose `media` volume. Production may use
+S3-compatible object storage without changing document business logic.
 
-The database stores metadata and an internal `storage_key`. Generate
-storage keys independently of the original filename.
+The database stores metadata and a unique internal UUID-based
+`storage_key`. Generate storage keys independently of the original
+filename. Keep the storage key out of API responses and do not expose
+file bytes through a public URL. Downloads stream through an authenticated
+backend endpoint with `Content-Disposition: attachment` and
+`X-Content-Type-Options: nosniff`.
 
 The original filename is metadata for display only.
 
 ## 4. Processing pipeline
 
-Document processing is asynchronous:
+Document processing is asynchronous. Stage 08 validates and stores the
+original file, creates metadata with `processing_status=queued`, and
+returns without extraction. Stage 09 owns the processing worker and
+subsequent transitions:
 
-1.  Validate upload and project membership.
-2.  Store the original file.
-3.  Create Document metadata with `processing_status=queued`.
-4.  Enqueue processing after the database transaction commits.
-5.  Extract text using a format-specific parser.
-6.  Split extracted text into chunks.
-7.  Store DocumentChunk records.
-8.  Generate embeddings using the active embedding profile.
-9.  Store vectors in pgvector.
-10. Mark the document ready or failed/unsupported.
+1.  Enqueue processing after the database transaction commits.
+2.  Extract text using a format-specific parser.
+3.  Split extracted text into chunks.
+4.  Store DocumentChunk records.
+5.  Generate embeddings using the active embedding profile.
+6.  Store vectors in pgvector.
+7.  Mark the document ready or failed/unsupported.
 
 The upload request must not wait for extraction, embedding, or AI
 analysis to finish.
@@ -155,4 +164,6 @@ after an operational retention schedule is approved.
 - Limit parser CPU, memory, and execution time.
 - Handle malformed files safely.
 - Treat extracted text as untrusted input when passed to AI.
-- Add malware scanning before public production launch.
+- Malware scanning is not available in this MVP environment. Selecting
+  and deploying a scanner is a production gate before public launch;
+  uploaded files are not represented as scanned.

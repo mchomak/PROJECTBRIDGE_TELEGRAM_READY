@@ -174,16 +174,21 @@ provider identifiers and model settings, not raw credentials.
 
 ## 8. File security
 
-- Enforce the 20 MB limit server-side.
-- Validate extension and detected MIME type.
-- Generate internal storage keys; never use the supplied filename as a
-  filesystem path.
+- Enforce the `20 * 1024 * 1024` byte limit server-side.
+- Validate the supported extension against detected file content;
+  browser-provided MIME is not trusted.
+- Generate UUID-based internal storage keys; the supplied filename is
+  display metadata only and is never a filesystem path.
 - Store files outside the public frontend directory.
-- Authorize every download.
+- Authorize every download for an active member of the document's
+  project and stream it through the backend as an attachment.
+- Do not expose a public file URL or the internal storage key.
+- Return `X-Content-Type-Options: nosniff` on file downloads.
 - Apply processing time and resource limits to parsers.
 - Treat document contents as untrusted input, including prompt-injection
   content.
-- Consider malware scanning before production launch.
+- Malware scanning is not available in the MVP environment. Selecting
+  and deploying a scanner is a production gate before public launch.
 
 Public URL import is not part of the MVP, so URL-fetch/SSRF
 functionality must not be added as part of document upload.

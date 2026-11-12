@@ -123,7 +123,7 @@ product has no agreed objective weighting model for such a metric.
 - Both participants can upload documents.
 - All project documents are visible to both participants. Private
   documents do not exist in the MVP.
-- Maximum upload size: 20 MB per file.
+- Maximum upload size: `20 * 1024 * 1024` bytes per file (20 MiB).
 - Supported formats: PDF, DOCX, TXT, and Markdown.
 - Text extraction only.
 - OCR, audio processing, and video processing are excluded.

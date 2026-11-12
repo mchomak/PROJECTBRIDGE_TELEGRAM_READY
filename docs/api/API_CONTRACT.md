@@ -360,8 +360,27 @@ cursor-paginated REST history.
 | POST   | `/api/v1/document-lifecycle-requests/{request_id}/cancel/`  | Project member       | Cancel pending deletion request             |
 | POST   | `/api/v1/documents/{document_id}/restore/`                  | Project member       | Restore archived document                   |
 
+The document collection supports `page` (default `1`) and `page_size`
+(default `20`, maximum `100`). Its default status view contains active
+and archive-pending documents; `status=archived` and
+`status=deletion_pending` select those respective states. Deleted
+documents are never returned as content.
+
+Uploads use `multipart/form-data` with a `file` field. The server accepts
+only `.pdf`, `.docx`, `.txt`, `.md`, and `.markdown`, validates the
+extension against detected content, ignores browser-supplied MIME as
+evidence, and rejects files larger than `20 * 1024 * 1024` bytes with
+`413`; unsupported or mismatched files return `415`. The response
+contains shared metadata and `processing_status=queued`; it omits the
+internal storage key and any public file URL.
+Zero-byte TXT and Markdown files are valid text uploads and also remain
+queued until Stage 09 processing is available.
+
 All documents are shared. There is no private-document API or visibility
-flag. Both participants can upload.
+flag. Both active participants can upload, list, read metadata, and
+download. Every download is authorized on the backend and streamed as an
+attachment; file bytes have no public URL. Cross-project or inactive
+membership resource IDs return `404`.
 
 Archive and permanent deletion require consent from both participants.
 The initiating participant’s request records their approval; the other
