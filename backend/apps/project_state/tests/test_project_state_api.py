@@ -116,6 +116,28 @@ def test_members_read_shared_state_but_only_executor_can_create_or_edit(
 
 
 @pytest.mark.django_db
+def test_stage_position_rejects_values_above_database_integer_range(project_context):
+    project, executor, _, _, _ = project_context
+    client = _client(executor)
+    url = f"/api/v1/projects/{project.pk}/stages/"
+
+    response = client.post(
+        url, {"name": "Invalid position", "position": 2_147_483_648}, format="json"
+    )
+    assert response.status_code == 400
+    assert not ProjectStage.objects.filter(project=project).exists()
+
+    created = client.post(url, {"name": "Valid position"}, format="json")
+    updated = client.patch(
+        f"/api/v1/stages/{created.data['id']}/",
+        {"position": 2_147_483_648},
+        format="json",
+    )
+    assert updated.status_code == 400
+    assert ProjectStage.objects.get(pk=created.data["id"]).position == 0
+
+
+@pytest.mark.django_db
 def test_state_aggregate_has_scoped_collection_links_and_no_progress_percentage(
     project_context,
 ):

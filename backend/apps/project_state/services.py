@@ -146,6 +146,8 @@ def _positive_position(data, field="position"):
     value = data[field]
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         _validation_error(field, "Ensure this value is a non-negative integer.")
+    if value > 2_147_483_647:
+        _validation_error(field, "Ensure this value is at most 2147483647.")
 
 
 def _uuid_value(value, *, field):
