@@ -169,46 +169,48 @@ contents into a Codex prompt.
 Do not spawn nested agents unless the project owner explicitly asks.
 
 <!-- autopilot:start -->
-# ProjectBridge: Stages 01-03 local runtime, accounts, projects, and passport
+# ProjectBridge: local MVP through invitations, shared state, chat, and documents
 
-ProjectBridge is a React/Vite frontend and Django/DRF ASGI modular monolith. PostgreSQL is the source of truth; Redis backs Celery and Channels. Runtime pins: Python 3.13.18 / Django 5.2.19; Node 24.22.2 / React 19.3.1 / Vite 8.3.7 / React Router 7; PostgreSQL 17 with pgvector 0.8.7; Redis 7.4.12; Channels 4.3.2; Celery 5.7.0. Implemented slices are accounts and projects/passport. Stage 03 has no invitation, customer-acceptance, questionnaire, Project State, or progress workflow.
+ProjectBridge is a React/TypeScript/Vite frontend and Django/DRF ASGI modular monolith. PostgreSQL is the source of truth; Redis backs Celery, Channels, and throttling. Runtime pins: Python 3.13.18 / Django 5.2.19; Node 24.22.2 / React 19.3.1 / Vite 8.3.7 / React Router 7; PostgreSQL 17 with pgvector 0.8.7; Redis 7.4.12; Channels 4.3.2; Celery 5.7.0. Implemented workflows include accounts/projects/passport, verified-email invitations, deterministic questionnaires, shared Project State, persisted chat with WebSocket delivery, and shared documents with two-party lifecycle actions. AI analysis, document extraction, and specification workflows are not implemented.
 
 ## Runtime and entry points
 
-- `docker-compose.yml` runs `frontend`, `backend`, `db`, `redis`, and `celery-worker`. Vite is published on loopback port 5173; Django on `BACKEND_HOST_PORT` (default 8000). PostgreSQL and Redis are Compose-network services. PostgreSQL and media use named volumes; ordinary `docker compose down` preserves them. Do not use `down -v` for routine stops. Celery Beat is absent.
-- Backend settings live in `backend/config/settings/`. `backend/config/urls.py` mounts health at `/api/v1/health/`, auth at `/api/v1/auth/`, projects at `/api/v1/projects/`, and development schema/docs at `/api/schema/` and `/api/docs/`. `backend/config/asgi.py` routes HTTP and WebSockets; the health probe is `/ws/v1/health/`. `backend/config/celery_app.py` configures Celery; `backend/apps/common/tasks.py` owns retry-safe `runtime_probe`.
-- From the repo root, create `.env` only when absent, then start, migrate, inspect, and stop with:
+- `docker-compose.yml` runs `frontend`, `backend`, `db`, `redis`, `celery-worker`, and `celery-beat`. Vite is published on loopback port 5173; Django on `BACKEND_HOST_PORT` (default 8000). PostgreSQL and Redis are Compose-network services. PostgreSQL and media use named volumes; ordinary `docker compose down` preserves them. Do not use `down -v` for routine stops.
+- Local Compose inputs are named in `.env.example`: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_BASE_URL`, `BACKEND_HOST_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `REDIS_PASSWORD`. Container settings also use `DB_HOST`, `DB_PORT`, and `REDIS_URL`. Keep `.env` local and never print or commit its values.
+- Settings are in `backend/config/settings/`; `config/urls.py` mounts health, auth, invitation, questionnaire, Project State, project, and document APIs. `config/asgi.py` routes HTTP and authenticated WebSockets, including `/ws/v1/health/` and `/ws/v1/projects/{project_id}/chat/`. `config/celery_app.py` configures Celery; Beat runs the retry-safe document deletion sweep every 300 seconds.
+- From the repo root, start and migrate with:
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build -d
 docker compose exec backend python manage.py migrate
 docker compose ps
-docker compose down
 ```
 
-Keep `.env` local; never read secrets into output or commit them. Backend and frontend source are baked into images without source bind mounts. After backend edits rebuild with `docker compose up --build -d backend` before live settings/schema/migration checks. After frontend edits rebuild/recreate with `docker compose up --build -d --no-deps frontend` before using the running frontend container.
+Use `docker compose down` to stop services while preserving named volumes. Source is baked into images without source bind mounts: rebuild backend after backend edits with `docker compose up --build -d backend`; recreate frontend after frontend edits with `docker compose up --build -d --no-deps frontend` before inspecting the running app.
 
-## Backend ownership and public boundaries
+## Backend boundaries and APIs
 
-- `backend/apps/accounts/` owns `accounts.User`, verification-token records, email normalization, registration, login, resend, and confirmation. `accounts/api/` exposes CSRF, register/login/logout/me, and email-verification endpoints. Browser auth uses Django's HttpOnly session cookie and CSRF on unsafe requests; local email uses Django's console backend (`docker compose logs -f backend`). Verification tokens are stored hashed; the email link token is read from the URL fragment.
-- `backend/apps/projects/models.py` owns `Project`, `ProjectMember`, and `ProjectPassport`. Project types are `website`, `telegram_bot`, `automation`, `other`; statuses are `draft`, `active`, `completed`, `archived`; membership roles are `executor`, `customer`, and states are `active`, `left`, `revoked`. DB constraints enforce one row per project/user and at most one active member per role. Stage 03 creation adds only the creator as active executor; no endpoint creates or accepts a customer membership.
-- Writes in `backend/apps/projects/services.py`: `create_project`, `update_project_metadata`, `complete_project`, `reopen_project`, `archive_project`, `restore_project`, `update_passport`. Reads in `backend/apps/projects/selectors.py`: `get_projects_for_member`, `get_project_for_member`, `get_active_project_members`, `get_passport_for_member`. `backend/apps/projects/api/` views authenticate/validate/orchestrate and map domain errors; keep business transitions in services.
-- `backend/apps/common/models.py` owns `ProjectAuditLog`; `backend/apps/common/services.py::record_project_action` validates and persists safe metadata. Project writes and their audit rows share a transaction. Audit metadata records field names, status transitions, and passport versions, not project field values.
-- Project endpoints: `GET, POST /api/v1/projects/`; `GET, PATCH /api/v1/projects/{project_id}/`; `GET /api/v1/projects/{project_id}/members/`; `POST /api/v1/projects/{project_id}/complete/`, `/reopen/`, `/archive/`, and `/restore/`; `GET, PATCH /api/v1/projects/{project_id}/passport/`. Endpoints require an authenticated session and CSRF for unsafe methods. Creation additionally requires verified email. Project, member, and passport reads are scoped to active membership; inaccessible project reads return 404. Member listing includes active memberships only.
-- Project list defaults to non-archived projects; `status=archived` selects the archive. Ordering is `updated_at DESC, id ASC`, page size defaults to 20 and is capped at 100. Metadata accepts only `name`, `project_type`, `description`, requires an active executor membership, and is allowed only in `draft` or `active`. Lifecycle actions are executor-only: complete `active`; reopen `completed`; archive `draft`, `active`, or `completed` while saving prior status; restore to that status. Invalid transitions return 409. Project responses omit internal `status_before_archive`.
-- Preserve migrations and local data: accounts `0001_initial`; projects `0001_initial`, `0002_project_constraints`; common `0001_enable_pgvector`, `0002_project_audit_log`.
+- `backend/apps/accounts/` owns the user, normalized email, verification tokens, registration/login, and CSRF/session endpoints. Browser auth uses an HttpOnly session cookie and CSRF for unsafe requests. Local email uses Django's console backend; inspect it with `docker compose logs backend`.
+- `backend/apps/projects/` owns `Project`, membership, passport, project lifecycle, and the public service boundary for invitation acceptance and versioned questionnaire mapping. Roles are `executor` and `customer`; reads are active-member scoped and writes enforce role/status rules in services. Passport writes are versioned and stale versions return 409.
+- `backend/apps/invitations/` owns email-bound invitations and throttling. Create/list/revoke routes are under `/api/v1/projects/{project_id}/invitations/`; public preview/accept are under `/api/v1/invitations/`. Raw tokens are emailed and stored only as hashes; acceptance requires the matching verified normalized email.
+- `backend/apps/questionnaire/` owns immutable product-authored JSON schemas in `schemas/`, submissions, answers, and its executor-only conflict queue. Project questionnaire APIs are under `/api/v1/projects/{project_id}/questionnaire/`; submission actions are under `/api/v1/questionnaire/`. Answers stay separate from the passport; explicit mapping calls the owning projects service and never silently overwrites conflicts.
+- `backend/apps/project_state/` owns stages, requirements, tasks, open questions, conflicts, transitions, and evidence snapshots. Project State routes are under `/api/v1/projects/{project_id}/...`; the aggregate is `/state/`. Both roles can read shared state; structured changes are executor-only. Evidence resolvers read from the owning questionnaire/chat services. There is no completion-percentage field or display.
+- `backend/apps/chat/` owns persisted messages, signed keyset cursors, idempotency, and rate limiting. `GET, POST /api/v1/projects/{project_id}/messages/` is the source of truth; WebSocket `/ws/v1/projects/{project_id}/chat/` only delivers `message.created` events. ASGI `OriginValidator` allows origins from `FRONTEND_BASE_URL` and `CSRF_TRUSTED_ORIGINS`, rejecting missing or foreign origins; `AuthMiddlewareStack` and the consumer's authenticated active-member check still apply. New sends publish after commit; replaying the same `client_message_id` does not publish again.
+- `backend/apps/documents/` owns document metadata/storage, lifecycle approvals, selectors/services, and the scheduled deletion task. Project upload/list is under `/api/v1/projects/{project_id}/documents/`; document detail/download/lifecycle/restore use `/api/v1/documents/{document_id}/`; request approval/rejection/cancellation uses `/api/v1/document-lifecycle-requests/{request_id}/`. Both active members share documents. Upload supports PDF, DOCX, TXT, and Markdown up to 20 MiB. Archive and permanent deletion require both participants. The deletion window starts on second approval; restore cancels an unapproved one-party deletion request, while an approved deletion needs explicit cancellation before restore.
+- `backend/apps/common/` owns safe project audit writes. Keep views thin, writes in the owning app's services, reads in selectors, and cross-app writes behind the owner service. Audit metadata must not contain tokens, credentials, message content, or file contents.
+- `backend/apps/` contains domain apps and their `models.py`, `services.py`, `selectors.py`, `api/`, `migrations/`, and `tests/`. Preserve additive migrations and existing local data.
 
-## Passport schema and frontend contract
+## Frontend and API contract
 
-- A passport is created with each project at version 1. Read fields: `id`, `project_id`, `goal`, `target_audience`, `expected_result`, `functional_scope`, `integrations`, `constraints`, `deadline`, `budget_min`, `budget_max`, `currency`, `additional_data`, `version`, `created_at`, `updated_at`. Text fields default to empty strings; JSON fields to `{}`; date, decimal budgets, and currency are nullable. Budgets currently use `max_digits=30`, `decimal_places=10` in code (Stage 03 interfaces record this as an implementation assumption). Currency is nullable, limited to three ASCII letters, and uppercased.
-- PATCH requires a positive integer `version` and at least one editable field from `goal`, `target_audience`, `expected_result`, `functional_scope`, `integrations`, `constraints`, `deadline`, `budget_min`, `budget_max`, `currency`, `additional_data`. Unknown fields are rejected. The service compares version atomically and increments once on success. A stale version returns 409 without passport mutation or audit row. Writes require executor membership and status `draft` or `active`; active members can read in every status.
-- Frontend project data is owned by `frontend/src/entities/project/` (API, generated-schema types, query keys/hooks); mutations are in `frontend/src/features/projects/`. Public exports include `getProjects`, `getProject`, `getProjectMembers`, `getProjectPassport`, `useProjectList`, `useProject`, `useProjectMembers`, `useProjectPassport`, `useCreateProject`, `useUpdateProject`, `useProjectLifecycleAction`, and `useUpdatePassport`. API functions return `Promise<ProjectPage>`, `Promise<Project>`, `Promise<ProjectMember[]>`, and `Promise<ProjectPassport>` respectively; mutations use generated OpenAPI request/response types. Passport updates accept generated `ProjectPassportPatchSchema` with required `version`.
-- `frontend/src/shared/api/index.ts` owns same-origin `apiJson`, session credentials, CSRF bootstrap/header, and `ApiError`; never store credentials in browser storage. Query hooks do not retry 4xx `ApiError`s and retry other failures up to two times. `frontend/src/app/App.tsx` redirects `/app` to `/app/projects`; child routes are projects, archive, new, and `:projectId`. Auth pages live under `frontend/src/pages/auth/`, project pages under `frontend/src/pages/projects/`, and the authenticated shell under `frontend/src/widgets/workspace-shell/`. FSD direction is `app -> pages -> widgets -> features -> entities -> shared`.
+- Frontend FSD direction is `app -> pages -> widgets -> features -> entities -> shared`. Routes live in `frontend/src/app/App.tsx`; auth and invitation pages are in `pages/auth/` and `pages/invitations/`; project, chat, state, and questionnaire pages are in `pages/projects/`. Domain APIs/query hooks live in `entities/`; user actions live in `features/`; the authenticated shell is `widgets/workspace-shell/`.
+- `frontend/src/shared/api/index.ts` owns same-origin `apiJson`, credentials, CSRF bootstrap/header, and `ApiError`. Do not put business authorization in UI or credentials in browser storage. Query hooks do not retry 4xx `ApiError`s.
+- API TypeScript types are generated from drf-spectacular OpenAPI. Never edit `frontend/src/shared/api/generated/schema.d.ts` manually. After API changes, regenerate and copy the file using the commands below.
+- Technical contracts and unresolved product decisions live in `docs/README.md`, `docs/`, and `docs/OPEN_DECISIONS.md`; major decisions are recorded under `docs/decisions/`.
 
-## Local checks and generated API types
+## Checks and generated API types
 
-Run from the repo root with the existing Compose images:
+Run from the repo root with the current Compose images:
 
 ```sh
 docker compose run --rm --no-deps backend ruff format --check .
@@ -216,16 +218,16 @@ docker compose run --rm --no-deps backend ruff check .
 docker compose run --rm --no-deps backend python manage.py makemigrations --check --dry-run
 docker compose run --rm --no-deps backend python manage.py spectacular --validate --file /tmp/openapi.yml
 docker compose run --rm --no-deps -e DJANGO_SETTINGS_MODULE=config.settings.test backend python -m pytest -q
+docker compose run --rm --no-deps -e DJANGO_SETTINGS_MODULE=config.settings.test backend python -m pytest -q apps/documents/tests/test_api.py
 docker compose exec frontend npm run format:check
 docker compose exec frontend npm run lint
 docker compose exec frontend npm run typecheck
 docker compose run --build --rm --no-deps frontend npm test
+docker compose run --rm --no-deps frontend npm test -- src/pages/projects/ui/ProjectDocumentsPanel.test.tsx
 docker compose exec frontend npm run build
 docker compose exec -e API_SCHEMA_URL=http://backend:8000/api/schema/ frontend npm run api:types
 docker compose cp frontend:/app/src/shared/api/generated/schema.d.ts frontend/src/shared/api/generated/schema.d.ts
 ```
 
-Frontend source is baked into the image. `frontend/scripts/generate-api-types.mjs` fetches OpenAPI from `API_SCHEMA_URL` and writes `/app/src/shared/api/generated/schema.d.ts` in the container; copy it to `frontend/src/shared/api/generated/schema.d.ts` after generation. Never edit generated types by hand.
-
-Known verified Stage 03 results: backend suite 91 passed; frontend suite 29 passed; Ruff format/lint, migration check, drf-spectacular validation, frontend format/lint/typecheck/build, and API type generation passed. Do not report checks as passed unless run for the current change.
+The latest verified full suites for the current implementation were backend `300 passed` and frontend `72 passed / 10 files`; Ruff format/lint, migration check, drf-spectacular validation, frontend format/lint/typecheck/build, Compose config, live migrate, and `/api/v1/health/` passed. Re-run checks for changed code before reporting it as verified. Backend source is baked into its image; frontend source is baked into its image. `frontend/scripts/generate-api-types.mjs` writes the generated declaration inside the container, then `docker compose cp` copies it to the repository.
 <!-- autopilot:end -->
