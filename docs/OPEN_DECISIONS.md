@@ -2,7 +2,7 @@
 
 **Purpose:** Track decisions that remain unresolved after the
 architecture discussion.  
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-12
 
 Items not marked resolved must be resolved before the corresponding
 implementation is considered complete. Resolved entries remain here as
@@ -11,17 +11,40 @@ silently.
 
 ## Product and workflow
 
-1.  **Questionnaire correction flow:** Decide whether a correction
-    request reopens the same submission or creates a superseding
-    submission. Preserve the original submitted answers either way.
-2.  **Questionnaire schemas:** Define the exact questions, branching
-    rules, required fields, and schema versions for all four project
-    types.
-3.  **Passport mapping (Stage 05):** Stage 03 uses exactly the proposed
-    field names and types in `database/DATA_MODEL.md`. Exact answer-to-field
-    mappings, questionnaire requiredness, conflict detection, and which
-    value remains authoritative until executor review remain open before
-    Stage 05.
+1.  **Questionnaire correction flow — resolved for the MVP on
+    2026-11-12:** A correction request changes the submitted row to
+    `correction_requested` without changing its answers and creates one
+    new `draft` with `supersedes_id` pointing to the source. The new draft
+    copies the source answers and schema version. Repeating the request
+    returns the existing draft. See the Stage 04–08 Autopilot spec §3.7
+    and `database/DATA_MODEL.md`.
+2.  **Questionnaire schemas — resolved for the MVP on 2026-11-12:** The
+    product-authored v1 JSON files cover `website`, `telegram_bot`,
+    `automation`, and `other`. Required common fields are `goal`,
+    `target_audience`, `expected_result`, `functional_scope`, and
+    `has_integrations`. `integrations` is required and non-empty when
+    enabled and is stored as `[]` when disabled. Optional fields are
+    `constraints`, `deadline`, `budget_min`, `budget_max`, and `currency`;
+    currency is required when a budget is present and the minimum cannot
+    exceed the maximum. Website and Telegram bot schemas conditionally
+    require an HTTP(S) existing-resource URL; automation branches on
+    `scheduled|event|manual`; `other` requires `project_area`. Published
+    versions are immutable; new drafts select the latest version, while
+    corrections retain their source version. See the versioned JSON in
+    `backend/apps/questionnaire/schemas/` and Stage 04–08 Autopilot spec
+    §3.2–3.4.
+3.  **Passport mapping (Stage 05) — resolved for the MVP on 2026-11-12:**
+    `goal`, `target_audience`, `expected_result`, `deadline`,
+    `budget_min`, `budget_max`, and `currency` map to same-named passport
+    fields. `functional_scope`, `integrations`, and `constraints` map
+    under the project-type key in their respective JSON fields;
+    integrations use `{enabled, items}`. Type-specific answers and schema
+    version are preserved in `additional_data.questionnaire`. Optional
+    empty values do not clear the passport. Differing values are kept in
+    an executor-only questionnaire conflict queue; the passport remains
+    unchanged until the executor chooses `keep_passport` or `apply_answer`.
+    No automatic shared `ProjectConflict` is created. See Stage 04–08
+    Autopilot spec §3.5–3.6 and `database/DATA_MODEL.md`.
 4.  **Project lifecycle — resolved for the MVP on 2026-11-11:** New
     projects start as `draft`; accepting a customer invitation moves a
     draft project to `active`. The executor may move `active` to
@@ -67,9 +90,10 @@ silently.
     thresholds.
 18. **Prompt/version management:** Define how prompt templates are
     versioned and tested.
-19. **Questionnaire conflict visibility:** Confirm whether deterministic
-    questionnaire conflicts appear immediately in shared Project State
-    or remain in an executor review queue until resolved.
+19. **Questionnaire conflict visibility — resolved for the MVP on
+    2026-11-12:** Deterministic questionnaire conflicts remain in an
+    executor-only review queue until resolved. They do not appear as
+    shared Project State conflicts. See Stage 04–08 Autopilot spec §3.6.
 
 ## API and implementation
 

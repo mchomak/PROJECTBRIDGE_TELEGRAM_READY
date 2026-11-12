@@ -485,6 +485,9 @@ test('customer sees project metadata and the passport as read-only', async () =>
 
   expect(await screen.findByRole('heading', { name: 'Client portal' })).toBeTruthy();
   expect(await screen.findByText('Launch a customer portal')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open questionnaire' }).getAttribute('href')).toBe(
+    `/app/projects/${projectId}/questionnaire`,
+  );
   for (const field of [
     'Goal',
     'Target audience',

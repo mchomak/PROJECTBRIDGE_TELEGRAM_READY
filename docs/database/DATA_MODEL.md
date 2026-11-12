@@ -158,8 +158,8 @@ Proposed fields:
 The field names and types above are the approved Stage 03 passport
 schema. Do not add or remove business fields. Use ordinary columns for
 stable, frequently queried fields and JSONB for type-specific or evolving
-attributes. Questionnaire answer mapping and questionnaire requiredness
-remain Stage 05 decisions; Stage 03 must not infer them from the field
+attributes. Stage 05 has explicitly defined the questionnaire mapping
+and validation rules below; they are not inferred from passport field
 types.
 
 ## 4. Invitations
@@ -213,13 +213,19 @@ Fields:
 - `project_id` — FK Project
 - `schema_key`
 - `schema_version`
-- `status` — at minimum `draft`, `submitted`, `correction_requested`
+- `status` — `draft`, `submitted`, or `correction_requested`
 - `started_by_id` — FK User
 - `submitted_by_id` — nullable FK User
 - `started_at`
 - `submitted_at`, nullable
-- `supersedes_id` — nullable self-reference if revision history is
-  implemented
+- `supersedes_id` — nullable self-reference to the submission that this
+  correction draft replaces
+
+Constraint: at most one `draft` questionnaire submission exists per
+project. A correction request changes the original submitted row to
+`correction_requested` and creates a new draft that references it with
+`supersedes_id`; the original submission and answers are retained. A
+repeated correction request returns the already-created draft.
 
 ### `QuestionnaireAnswer`
 
@@ -236,9 +242,48 @@ Fields:
 
 Constraint: unique `(submission_id, question_key)`.
 
-The exact resubmission/revision mechanism after a correction request
-remains open. Preserve submitted answer data rather than silently
-overwriting historical submissions.
+Prefilled answers use `origin=prefilled` and `is_confirmed=false`.
+Editing an answer changes its origin to `customer`. Saving a draft writes
+answers only to `QuestionnaireAnswer`; it does not mutate
+`ProjectPassport`. Inactive-branch answers are removed or rejected.
+
+### Version 1 schema and validation decisions
+
+The immutable, product-authored files are
+`backend/apps/questionnaire/schemas/{website,telegram_bot,automation,other}.v1.json`.
+New drafts use the latest version for their project type. A correction
+draft retains the source submission's version. Add a new version file
+instead of changing a published schema.
+
+All project types require `goal`, `target_audience`, `expected_result`,
+`functional_scope`, and `has_integrations`. When integrations are
+enabled, `integrations` requires at least one item; when disabled, the
+stored value is an empty list. Optional common fields are `constraints`,
+`deadline`, `budget_min`, `budget_max`, and `currency`. A supplied budget
+requires a three-letter currency code, and `budget_min` cannot exceed
+`budget_max`. Dates use `YYYY-MM-DD`; resource URLs use HTTP(S).
+
+Type-specific branches are deterministic: `website` requires
+`has_existing_site` and requires `existing_site_url` when true;
+`telegram_bot` requires `has_existing_bot` and conditionally
+`existing_bot_url`; `automation` requires `trigger_type` (`scheduled`,
+`event`, or `manual`) and conditionally `schedule_details` or
+`event_source`; `other` requires `project_area`. The backend rejects
+unknown answers, invalid values, and answers for inactive branches.
+
+The approved mappings are: `goal`, `target_audience`,
+`expected_result`, `deadline`, `budget_min`, `budget_max`, and `currency`
+map to same-named passport fields. `functional_scope`, `integrations`,
+and `constraints` map under the project-type key in their same-named JSON
+passport fields. Integrations use `{enabled, items}`. Answers specific
+to a project type and `schema_version` are retained under
+`additional_data.questionnaire[project_type]`; `has_integrations` and
+`has_existing_*` control answers are not mapped. Empty optional answers
+do not clear passport values. Submission applies these mappings in the
+owning projects service; differing existing values are preserved as
+questionnaire conflicts for executor review and never silently replace
+the passport. The conflict queue is executor-only and is not shared
+Project State.
 
 ## 6. Chat
 
@@ -513,8 +558,6 @@ Before creating production migrations, finalize:
 
 - required/nullable fields and defaults;
 - exact status choices and transitions;
-- questionnaire revision strategy;
-- exact passport-to-questionnaire mapping;
 - deletion and retention constraints;
 - embedding model and vector dimension;
 - indexes based on actual query patterns;

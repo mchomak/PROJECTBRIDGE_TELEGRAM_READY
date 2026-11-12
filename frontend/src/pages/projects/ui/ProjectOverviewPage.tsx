@@ -792,6 +792,25 @@ export function ProjectOverviewPage() {
         </section>
       )}
 
+      {!isExecutor && (
+        <section
+          className="project-panel questionnaire-entry"
+          aria-labelledby="questionnaire-entry-title"
+        >
+          <div className="section-heading">
+            <div>
+              <h2 id="questionnaire-entry-title">Customer questionnaire</h2>
+              <p className="section-heading__description">
+                Share the project details in a guided questionnaire.
+              </p>
+            </div>
+          </div>
+          <Link className="button button--primary" to={`/app/projects/${project.id}/questionnaire`}>
+            {project.status === 'active' ? 'Open questionnaire' : 'View questionnaire'}
+          </Link>
+        </section>
+      )}
+
       <div className="overview-grid">
         <div className="overview-column">
           <section className="project-panel" aria-labelledby="project-details-title">

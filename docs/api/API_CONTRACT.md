@@ -234,21 +234,46 @@ duplicate membership or audit record; a second active customer returns
 | GET    | `/api/v1/projects/{project_id}/questionnaire/`                          | Project member                | Get applicable schema and current submission |
 | POST   | `/api/v1/projects/{project_id}/questionnaire/submissions/`              | Customer                      | Start a submission                           |
 | PATCH  | `/api/v1/questionnaire/submissions/{submission_id}/answers/`            | Customer, editable state only | Save answers                                 |
-| POST   | `/api/v1/questionnaire/submissions/{submission_id}/submit/`             | Customer                      | Validate and submit                          |
-| POST   | `/api/v1/questionnaire/submissions/{submission_id}/request-correction/` | Executor                      | Request customer correction                  |
 
-Questionnaire definitions are versioned JSON files in the backend
-repository. Backend validation is authoritative for required fields and
-branching rules.
+The GET, start, and draft-save operations are implemented in Stage 05
+T03. Reads require an authenticated active project member and return
+`404` for projects the caller cannot access. Mutations require the active
+project customer, an `active` project, and CSRF. An executor or caller
+from another project cannot edit the draft. Starting a draft accepts an
+empty JSON object, returns `201` when created and `200` when an existing
+draft is resumed. Saving accepts `{ "answers": { "<question_key>":
+<JSON value> } }` and returns the submission with its current answer
+origins. Draft saves are partial updates, validate each supplied answer
+and branch on the backend, and return `400` for unknown, invalid, or
+inactive-branch answers. A non-active project or non-draft submission
+returns `409`. Questionnaire answer rows remain separate from passport
+fields; starting and saving a draft never changes the passport.
 
-A submitted questionnaire is locked. The correction/revision mechanism
-must preserve prior submitted data; whether corrections reopen the same
-submission or create a superseding submission is still to be finalized.
+The GET response contains the applicable schema key, project type,
+version, product-authored questions, and a nullable current draft. With
+no draft it selects the latest version for the project type; an existing
+draft stays pinned to its stored version. The schemas are immutable
+versioned JSON in the backend repository. The backend is authoritative
+for required fields, types, cross-field validation, and deterministic
+branching. The v1 field and branch contract is recorded in
+`database/DATA_MODEL.md` and the source JSON files.
 
-On submission, the backend applies deterministic passport mappings.
-Non-conflicting values may update the passport. Conflicting values are
-preserved and recorded for executor review; no silent overwrite is
-allowed.
+The following submission operations are specified for Stage 05 T04 and
+are not implemented by T03:
+
+- `POST /api/v1/questionnaire/submissions/{submission_id}/submit/`
+  validates a complete questionnaire and locks that version.
+- `POST /api/v1/questionnaire/submissions/{submission_id}/request-correction/`
+  is executor-only and creates a superseding draft while preserving
+  source answers. The correction draft retains the source schema
+  version.
+
+On submission, the backend applies explicit passport mappings through
+the projects owner service. Non-conflicting values may update the
+passport; differing values are preserved in an executor-only
+questionnaire conflict queue until the executor chooses to keep the
+passport value or apply the answer. These conflicts are not automatically
+added to shared Project State.
 
 ## 9. Chat — `chat`
 

@@ -16,6 +16,10 @@ app_name = "projects"
 urlpatterns = [
     path("", ProjectListCreateView.as_view(), name="project-list"),
     path(
+        "<uuid:project_id>/questionnaire/",
+        include("apps.questionnaire.api.project_urls"),
+    ),
+    path(
         "<uuid:project_id>/invitations/",
         include("apps.invitations.api.urls"),
     ),

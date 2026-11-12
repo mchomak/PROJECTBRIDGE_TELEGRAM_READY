@@ -1,0 +1,21 @@
+{
+  "schema_key": "automation",
+  "project_type": "automation",
+  "version": 1,
+  "questions": [
+    {"key": "goal", "label": "What is the main goal of this project?", "type": "textarea", "required": true, "min_length": 1, "max_length": 4000, "mapping": "goal"},
+    {"key": "target_audience", "label": "Who is the target audience?", "type": "textarea", "required": true, "min_length": 1, "max_length": 4000, "mapping": "target_audience"},
+    {"key": "expected_result", "label": "What result should the project deliver?", "type": "textarea", "required": true, "min_length": 1, "max_length": 4000, "mapping": "expected_result"},
+    {"key": "functional_scope", "label": "What should the automation do?", "type": "textarea", "required": true, "min_length": 1, "max_length": 6000, "mapping": "functional_scope"},
+    {"key": "has_integrations", "label": "Does the project need integrations with other services?", "type": "boolean", "required": true},
+    {"key": "integrations", "label": "Which services should it connect to?", "type": "string_list", "required": true, "min_items": 1, "max_items": 20, "visible_if": {"question": "has_integrations", "equals": true}, "mapping": "integrations"},
+    {"key": "constraints", "label": "Are there constraints or requirements we should know about?", "type": "textarea", "required": false, "max_length": 4000, "mapping": "constraints"},
+    {"key": "deadline", "label": "What is the target delivery date?", "type": "date", "required": false, "mapping": "deadline"},
+    {"key": "budget_min", "label": "What is the minimum budget?", "type": "decimal", "required": false, "minimum": "0", "maximum_digits": 30, "decimal_places": 10, "mapping": "budget_min"},
+    {"key": "budget_max", "label": "What is the maximum budget?", "type": "decimal", "required": false, "minimum": "0", "maximum_digits": 30, "decimal_places": 10, "mapping": "budget_max"},
+    {"key": "currency", "label": "What currency is the budget in?", "type": "currency", "required": false, "required_if_any": ["budget_min", "budget_max"], "mapping": "currency"},
+    {"key": "trigger_type", "label": "What starts the automation?", "type": "select", "required": true, "options": [{"value": "scheduled", "label": "On a schedule"}, {"value": "event", "label": "When an event occurs"}, {"value": "manual", "label": "Manually"}], "mapping": null},
+    {"key": "schedule_details", "label": "How often should it run?", "type": "textarea", "required": true, "max_length": 2000, "visible_if": {"question": "trigger_type", "equals": "scheduled"}, "mapping": null},
+    {"key": "event_source", "label": "What event should start it?", "type": "textarea", "required": true, "max_length": 2000, "visible_if": {"question": "trigger_type", "equals": "event"}, "mapping": null}
+  ]
+}

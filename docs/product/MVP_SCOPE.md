@@ -65,14 +65,35 @@ different roles in different projects.
   rules.
 - AI does not generate questionnaire questions or branching rules.
 - The questionnaire is selected by project type.
+- Version 1 is product-authored for `website`, `telegram_bot`,
+  `automation`, and `other`; released schema files are immutable and a
+  new draft uses the latest schema version for its project type.
+- `goal`, `target_audience`, `expected_result`, `functional_scope`, and
+  `has_integrations` are required. Enabled integrations require a
+  non-empty list; disabled integrations are saved as an empty list.
+  `constraints`, `deadline`, `budget_min`, `budget_max`, and `currency`
+  are optional, except currency is required when a budget is given and
+  the minimum cannot exceed the maximum.
+- Website and Telegram bot schemas ask whether an existing resource
+  needs updates and require its HTTP(S) address only when the answer is
+  yes. Automation asks for a scheduled, event, or manual trigger and
+  shows the matching schedule/event detail. Other projects require a
+  project area.
 - Existing passport data may prefill questionnaire answers.
 - Customer answers are stored separately from the passport.
-- On submission, deterministic mapping rules update non-conflicting
-  passport fields.
-- Conflicting values are preserved and recorded for executor review.
-- A submitted questionnaire is locked. The executor may request
-  corrections; the customer can then correct and resubmit according to
-  the final revision workflow.
+- Prefilled values are marked as such and remain unconfirmed until the
+  customer edits or confirms them during submission.
+- On submission, explicit mappings update only non-conflicting passport
+  fields. Empty optional answers do not clear existing values. Type
+  answers and schema version are preserved under
+  `additional_data.questionnaire`.
+- Conflicting values remain unchanged in the passport and enter an
+  executor-only questionnaire conflict queue; they are not added to
+  shared Project State. The executor chooses whether to keep the passport
+  value or apply the customer answer.
+- A submitted questionnaire is locked. A correction creates a new draft
+  that supersedes the submitted row and copies its answers and schema
+  version, preserving the original answers.
 
 ### 3.4 Project State
 
