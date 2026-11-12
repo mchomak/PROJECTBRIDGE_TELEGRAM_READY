@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.chat.selectors import get_message_for_evidence
 from apps.common.services import record_project_action
 from apps.projects.models import (
     Project,
@@ -548,6 +549,33 @@ def _snapshot_questionnaire_answer(*, project, source_id):
     }
 
 
+def _snapshot_message(*, project, source_id):
+    message = get_message_for_evidence(
+        project_id=project.pk,
+        message_id=source_id,
+    )
+    if message is None:
+        raise ProjectStateNotFoundError
+    return {
+        "source_type": EvidenceSourceType.MESSAGE,
+        "source_id": message.pk,
+        "excerpt": message.content,
+        "metadata": {
+            "message_type": message.message_type,
+            "sender_id": str(message.sender_id),
+            "sent_at": message.created_at.isoformat(),
+        },
+    }
+
+
+def _snapshot_evidence_source(*, project, source_type, source_id):
+    if source_type == EvidenceSourceType.QUESTIONNAIRE_ANSWER:
+        return _snapshot_questionnaire_answer(project=project, source_id=source_id)
+    if source_type == EvidenceSourceType.MESSAGE:
+        return _snapshot_message(project=project, source_id=source_id)
+    _validation_error("evidence_refs", "This evidence source is not available.")
+
+
 def _normalize_evidence_refs(refs):
     if not isinstance(refs, list) or len(refs) < 2:
         _validation_error(
@@ -563,15 +591,17 @@ def _normalize_evidence_refs(refs):
             _validation_error(
                 f"evidence_refs.{index}", "Provide a source_type and source_id."
             )
-        if reference["source_type"] != EvidenceSourceType.QUESTIONNAIRE_ANSWER:
+        source_type = reference["source_type"]
+        if source_type not in EvidenceSourceType.values:
             _validation_error(
                 "evidence_refs", "This evidence source is not available yet."
             )
         source_id = _uuid_value(reference["source_id"], field="evidence_refs")
-        if source_id in seen:
+        source_key = (source_type, source_id)
+        if source_key in seen:
             _validation_error("evidence_refs", "Evidence references must be unique.")
-        seen.add(source_id)
-        normalized.append(source_id)
+        seen.add(source_key)
+        normalized.append(source_key)
     return normalized
 
 
@@ -588,8 +618,12 @@ def create_project_conflict(*, project_id, actor, data):
     with transaction.atomic():
         project = _authorize_project_for_write(project_id=project_id, actor=actor)
         snapshots = [
-            _snapshot_questionnaire_answer(project=project, source_id=source_id)
-            for source_id in source_ids
+            _snapshot_evidence_source(
+                project=project,
+                source_type=source_type,
+                source_id=source_id,
+            )
+            for source_type, source_id in source_ids
         ]
         conflict = ProjectConflict.objects.create(
             project=project,

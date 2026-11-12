@@ -92,6 +92,9 @@ call domain services rather than duplicate domain rules.
   mutate its records.
 - Cross-module reads use selectors or explicitly documented query
   interfaces.
+- Project State resolves questionnaire answer and chat Message Evidence
+  through the respective owning app selectors; it does not query another
+  app's models directly.
 - Avoid circular dependencies.
 - Shared utilities must remain generic; do not turn `common` into a
   dumping ground for business logic.
@@ -109,6 +112,13 @@ Use database transactions for logically atomic operations, including:
 Schedule Celery tasks after the transaction commits so workers do not
 read uncommitted data. Tasks must be retry-safe and should use stable
 object IDs rather than large serialized model objects.
+
+The chat app owns Message persistence and its project-scoped read/write
+services. Stage 07 exposes `enforce_chat_send_rate_limit`, which uses the
+shared Redis cache and a user-scoped fixed UTC-minute counter for REST
+sends. Stage 08 will wire the Channels consumer to this helper and the
+same user-scoped key so REST and WebSocket sends share the 60-per-minute
+limit once that consumer is implemented.
 
 For critical background events, assess a transactional outbox if
 measured reliability requirements exceed the simpler

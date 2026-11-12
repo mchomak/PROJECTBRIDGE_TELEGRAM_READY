@@ -280,7 +280,7 @@ class OpenQuestionPatchSerializer(StrictSerializer):
 
 
 class EvidenceReferenceSerializer(StrictSerializer):
-    source_type = serializers.ChoiceField(choices=("questionnaire_answer",))
+    source_type = serializers.ChoiceField(choices=("questionnaire_answer", "message"))
     source_id = serializers.UUIDField()
 
 

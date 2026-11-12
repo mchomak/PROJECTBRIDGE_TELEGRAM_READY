@@ -358,6 +358,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/messages/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_messages_list"];
+        put?: never;
+        post: operations["project_messages_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/open-questions/": {
         parameters: {
             query?: never;
@@ -721,9 +737,10 @@ export interface components {
         };
         /**
          * @description * `questionnaire_answer` - questionnaire_answer
+         *     * `message` - message
          * @enum {string}
          */
-        EvidenceReferenceSourceTypeEnum: "questionnaire_answer";
+        EvidenceReferenceSourceTypeEnum: "questionnaire_answer" | "message";
         EvidenceResponse: {
             /** Format: uuid */
             readonly id: string;
@@ -804,6 +821,39 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        MessageCreate: {
+            /** Format: uuid */
+            client_message_id: string;
+            content: string;
+        };
+        MessagePageResponse: {
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["MessageResponse"][];
+        };
+        MessageResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            /** Format: uuid */
+            readonly sender_id: string;
+            readonly content: string;
+            readonly message_type: components["schemas"]["MessageTypeEnum"];
+            /** Format: uuid */
+            readonly client_message_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string | null;
+        };
+        /**
+         * @description * `text` - Text
+         * @enum {string}
+         */
+        MessageTypeEnum: "text";
         /** @enum {unknown} */
         NullEnum: null;
         OpenQuestionCreate: {
@@ -2654,6 +2704,123 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_messages_list: {
+        parameters: {
+            query?: {
+                /** @description Stable history cursor. */
+                cursor?: string;
+                /** @description Messages per page (default 50, maximum 100). */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagePageResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_messages_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["MessageCreate"];
+                "multipart/form-data": components["schemas"]["MessageCreate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

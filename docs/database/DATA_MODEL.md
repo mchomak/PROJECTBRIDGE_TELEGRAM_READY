@@ -347,11 +347,13 @@ Fields:
 - `created_at`
 - `updated_at`, nullable
 
-Constraint: unique `(project_id, sender_id, client_message_id)` when a
-client message ID is supplied.
+`content` is trimmed at the API boundary, must not be blank, and is
+limited to 10,000 characters. `client_message_id` is required.
+Constraint: unique `(project_id, sender_id, client_message_id)`.
 
-Indexes: `(project_id, created_at)` and sender/project lookup as
-required.
+Index: `(project_id, created_at, id)` supports stable cursor history.
+Messages are ordered by `(created_at, id)`. The initial `message_type`
+is `text`; editing and deletion are outside this stage.
 
 ## 7. Documents
 
@@ -484,12 +486,11 @@ Fields: `id`, `project_id`, `source_type`, `source_id`, `excerpt`,
 
 `source_type` is `questionnaire_answer` or `message`. `source_id` is a
 polymorphic UUID; the owning app's selector must validate that the
-referenced source exists and belongs to the same project. Stage 06
-resolves questionnaire answers; the chat Message resolver is added after
-the message model and selector exist. A plain polymorphic UUID cannot be
-protected by a normal database foreign key. Evidence snapshots and
-conflict links are immutable; a normal update or delete of Evidence is
-rejected.
+referenced source exists and belongs to the same project. Questionnaire
+answers are resolved by the questionnaire selector and messages by the
+chat selector. A plain polymorphic UUID cannot be protected by a normal
+database foreign key. Evidence snapshots and conflict links are
+immutable; a normal update or delete of Evidence is rejected.
 
 ### Evidence links
 

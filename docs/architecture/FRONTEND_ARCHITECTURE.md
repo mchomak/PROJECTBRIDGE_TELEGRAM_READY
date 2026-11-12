@@ -105,12 +105,17 @@ data.
 
 ## 6. Real-time chat
 
-- REST loads message history and submits messages.
+- REST is the source of truth: it loads cursor-paginated message history
+  and submits messages. History is newest-first, uses stable
+  `(created_at, id)` ordering, defaults to 50 rows, and caps pages at
+  100.
 - WebSocket receives new-message events.
 - On reconnect, the client retrieves messages missed during
   disconnection through the REST API.
 - The client must handle duplicate delivery safely using message
   identifiers.
+- A failed send can be retried with the original `client_message_id`
+  and unchanged content.
 - WebSocket authorization is enforced by the backend.
 
 ## 7. Permission-aware interface

@@ -6,6 +6,7 @@ import { LoginPage, RegisterPage, VerificationRequiredPage, VerifyEmailPage } fr
 import { HomePage } from '../pages/home';
 import { NotFoundPage } from '../pages/not-found';
 import {
+  ChatPage,
   ProjectCreatePage,
   ProjectListPage,
   ProjectOverviewPage,
@@ -86,6 +87,7 @@ export function App() {
             <Route path="projects/archive" element={<ProjectListPage archived />} />
             <Route path="projects/new" element={<ProjectCreatePage />} />
             <Route path="projects/:projectId" element={<ProjectOverviewPage />} />
+            <Route path="projects/:projectId/chat" element={<ChatPage />} />
             <Route path="projects/:projectId/state" element={<ProjectStatePage />} />
             <Route path="projects/:projectId/questionnaire" element={<QuestionnairePage />} />
           </Route>

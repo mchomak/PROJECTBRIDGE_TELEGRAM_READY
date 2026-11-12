@@ -108,12 +108,20 @@ silently.
 
 ## API and implementation
 
-20. **Pagination defaults:** Set page sizes and cursor behavior.
-21. **Rate limits — invitation scopes resolved for Stage 04 on
-    2026-11-12:** Invitation creation is limited to 20/hour/executor,
+20. **Pagination defaults:** Set page sizes and cursor behavior for the
+    remaining collections. Chat history is resolved for Stage 07 on
+    2026-11-12: signed cursors use stable `(created_at, id)` ordering,
+    newest first, with a default page size of 50 and maximum of 100. See
+    `api/API_CONTRACT.md`.
+21. **Rate limits — invitation and chat scopes resolved for Stage 04
+    and Stage 07 on 2026-11-12:** Invitation creation is limited to
+    20/hour/executor,
     preview to 30/hour/IP, and acceptance to 10/hour/user through the
-    shared Redis cache. See ADR-011. Limits for uploads, chat, and AI
-    actions remain open. Stage 02 authentication scopes remain
+    shared Redis cache. See ADR-011. Chat sends are limited to 60 per
+    user per fixed UTC minute through one Redis counter. Stage 07 exposes
+    the limiter for REST; Stage 08 will wire the Channels consumer to the
+    same user-scoped key. Upload and AI action limits remain open. Stage 02
+    authentication scopes remain
     `register` 5/hour, `login` 10/minute, `resend` 3/hour, and `confirm`
     10/hour through the shared cache.
 22. **Idempotency storage:** Define key scope and retention for

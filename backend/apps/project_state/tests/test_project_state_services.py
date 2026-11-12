@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
+from apps.chat.services import send_message
 from apps.common.models import ProjectAuditLog
 from apps.project_state.models import (
     Evidence,
@@ -479,6 +480,62 @@ def test_conflict_rejects_duplicate_or_cross_project_evidence(project_context):
             actor=executor,
             data={"title": "Foreign evidence", "evidence_refs": foreign_refs},
         )
+
+
+@pytest.mark.django_db
+def test_message_evidence_snapshots_same_project_source_and_rejects_unknown_or_foreign(
+    project_context,
+):
+    project, executor, _, outsider, other_project = project_context
+    Project.objects.filter(pk=project.pk).update(status="active")
+    Project.objects.filter(pk=other_project.pk).update(status="active")
+    questionnaire_refs = _evidence_refs(project, executor)
+    message = send_message(
+        project_id=project.pk,
+        actor=executor,
+        client_message_id=uuid4(),
+        content="The customer approved the first launch window.",
+    ).message
+    foreign_message = send_message(
+        project_id=other_project.pk,
+        actor=outsider,
+        client_message_id=uuid4(),
+        content="This message belongs to another project.",
+    ).message
+
+    conflict = create_project_conflict(
+        project_id=project.pk,
+        actor=executor,
+        data={
+            "title": "Chat-backed evidence",
+            "evidence_refs": [
+                questionnaire_refs[0],
+                {"source_type": "message", "source_id": message.pk},
+            ],
+        },
+    )
+    message_evidence = conflict.evidence.get(source_type="message")
+    assert message_evidence.source_id == message.pk
+    assert message_evidence.excerpt == message.content
+    assert message_evidence.metadata == {
+        "message_type": "text",
+        "sender_id": str(executor.pk),
+        "sent_at": message.created_at.isoformat(),
+    }
+
+    for source_id in (uuid4(), foreign_message.pk):
+        with pytest.raises(ProjectStateNotFoundError):
+            create_project_conflict(
+                project_id=project.pk,
+                actor=executor,
+                data={
+                    "title": "Unavailable message source",
+                    "evidence_refs": [
+                        questionnaire_refs[0],
+                        {"source_type": "message", "source_id": source_id},
+                    ],
+                },
+            )
 
 
 @pytest.mark.django_db

@@ -305,8 +305,28 @@ correction version.
 
 | Method | Endpoint                                  | Permission     | Purpose                        |
 |:-------|:------------------------------------------|:---------------|:-------------------------------|
-| GET    | `/api/v1/projects/{project_id}/messages/` | Project member | Read paginated message history |
-| POST   | `/api/v1/projects/{project_id}/messages/` | Project member | Submit a message               |
+| GET    | `/api/v1/projects/{project_id}/messages/` | Active member | Read paginated message history |
+| POST   | `/api/v1/projects/{project_id}/messages/` | Active member | Submit a message               |
+
+Message history is available to both active project roles in every
+project status. It is ordered newest first by `(created_at, id)` and
+uses signed cursors in the `next` and `previous` response links. The
+`page_size` query parameter defaults to 50 and is capped at 100. The
+response contains `next`, `previous`, and `results`; each result includes
+`id`, `project_id`, `sender_id`, `content`, `message_type`,
+`client_message_id`, `created_at`, and `updated_at`.
+
+POST accepts `client_message_id` (UUID) and non-blank `content` (up to
+10,000 characters after trimming outer whitespace). Sending is allowed
+only while the project is active. A new message returns `201`; retrying
+the same ID and normalized content returns the original message with
+`200`, while reusing that ID with different content returns `409`.
+New sends are limited to 60 per user per fixed UTC minute via a shared
+Redis counter; exceeding the limit returns `429`. Stage 07 provides this
+user-scoped limiter to REST, and Stage 08 will connect WebSocket sends to
+the same counter. Idempotent replays do not count as new sends. Audit
+metadata records the actor role and message identifier, never message
+content.
 
 WebSocket:
 
@@ -317,7 +337,9 @@ active project membership. REST is used for persistence and message
 submission; WebSocket delivers events such as `message.created`. After
 reconnecting, clients retrieve missed messages through REST.
 
-Use a client-generated message identifier to make retries idempotent.
+REST remains the source of truth for messages. WebSocket delivery is
+implemented separately; clients recover missed messages through the
+cursor-paginated REST history.
 
 ## 10. Documents — `documents`
 
@@ -386,10 +408,11 @@ The UI shows terminal statuses without an editable status selector, keeps
 content edits available for terminal stages, requirements, tasks, and
 questions, and hides edit controls for terminal conflicts. A record ID
 outside the project is returned as 404.
-Conflict creation accepts at least two distinct evidence references;
-Stage 06 supports same-project questionnaire answers. Evidence options
-are executor-only and sourced through the questionnaire app. Message
-evidence resolution is added once chat owns its Message selector.
+Conflict creation accepts at least two distinct evidence references.
+Questionnaire answers are resolved through the questionnaire app, and
+Message references are resolved through the chat app's read selector;
+both sources must belong to the same project. Evidence options remain
+executor-only and are sourced through the questionnaire app.
 Conflict PATCH is only available while the conflict is `unresolved` and
 is used to resolve or dismiss it; resolution records the actor and
 timestamp. Resolved and dismissed conflicts cannot be edited again.

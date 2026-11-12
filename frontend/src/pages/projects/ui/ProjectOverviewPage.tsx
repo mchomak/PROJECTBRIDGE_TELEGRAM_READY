@@ -764,6 +764,12 @@ export function ProjectOverviewPage() {
           >
             Open Project State
           </Link>
+          <Link
+            className="button button--secondary project-state-link"
+            to={`/app/projects/${project.id}/chat`}
+          >
+            Open project chat
+          </Link>
         </div>
         <span className={`status-badge status-badge--large status-badge--${project.status}`}>
           {projectStatusLabels[project.status]}

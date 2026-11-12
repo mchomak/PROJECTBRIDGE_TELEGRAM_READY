@@ -1,7 +1,10 @@
+from uuid import uuid4
+
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
+from apps.chat.services import send_message
 from apps.common.models import ProjectAuditLog
 from apps.project_state.models import ProjectStage
 from apps.projects.models import Project, ProjectMember
@@ -376,6 +379,74 @@ def test_conflict_creation_requires_scoped_evidence_and_resolution_is_audited(
     assert resolved.data["resolved_by_id"] == str(executor.pk)
     assert resolved.data["resolved_at"] is not None
     assert repeated.status_code == 409
+
+
+@pytest.mark.django_db
+def test_conflict_api_accepts_same_project_message_and_rejects_unknown_or_foreign(
+    project_context,
+):
+    project, executor, _, outsider, other_project = project_context
+    Project.objects.filter(pk=project.pk).update(status="active")
+    Project.objects.filter(pk=other_project.pk).update(status="active")
+    questionnaire_refs = _evidence_refs(project, executor)
+    message = send_message(
+        project_id=project.pk,
+        actor=executor,
+        client_message_id=uuid4(),
+        content="The message cited in the conflict.",
+    ).message
+    foreign_message = send_message(
+        project_id=other_project.pk,
+        actor=outsider,
+        client_message_id=uuid4(),
+        content="This source belongs to another project.",
+    ).message
+    client = _client(executor)
+    url = f"/api/v1/projects/{project.pk}/conflicts/"
+
+    created = client.post(
+        url,
+        {
+            "title": "Chat evidence",
+            "evidence_refs": [
+                questionnaire_refs[0],
+                {"source_type": "message", "source_id": str(message.pk)},
+            ],
+        },
+        format="json",
+    )
+    unknown = client.post(
+        url,
+        {
+            "title": "Unknown chat evidence",
+            "evidence_refs": [
+                questionnaire_refs[0],
+                {"source_type": "message", "source_id": str(uuid4())},
+            ],
+        },
+        format="json",
+    )
+    foreign = client.post(
+        url,
+        {
+            "title": "Foreign chat evidence",
+            "evidence_refs": [
+                questionnaire_refs[0],
+                {"source_type": "message", "source_id": str(foreign_message.pk)},
+            ],
+        },
+        format="json",
+    )
+
+    assert created.status_code == 201
+    assert any(
+        evidence["source_type"] == "message"
+        and evidence["source_id"] == str(message.pk)
+        and evidence["excerpt"] == message.content
+        for evidence in created.data["evidence"]
+    )
+    assert unknown.status_code == 404
+    assert foreign.status_code == 404
 
 
 @pytest.mark.django_db
