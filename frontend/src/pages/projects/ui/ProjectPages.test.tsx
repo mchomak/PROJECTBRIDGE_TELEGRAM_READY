@@ -4,6 +4,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { User } from '../../../entities/user';
 import type { Project, ProjectMember, ProjectPassport } from '../../../entities/project';
+import type { Invitation, InvitationStatus } from '../../../entities/invitation';
 import { projectQueryKeys } from '../../../entities/project';
 import { ProjectCreatePage } from './ProjectCreatePage';
 import { ProjectListPage } from './ProjectListPage';
@@ -83,7 +84,22 @@ function setCsrfCookie() {
   });
 }
 
-function renderProjectPage(path: string, page = 'overview', currentUser = user) {
+function renderProjectPage(
+  path: string,
+  page = 'overview',
+  currentUser = user,
+  options: { mockEmptyInvitations?: boolean } = {},
+) {
+  if (options.mockEmptyInvitations !== false) {
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((!init?.method || init.method === 'GET') && String(input).includes('/invitations/?')) {
+        return jsonResponse({ count: 0, next: null, previous: null, results: [] });
+      }
+      return baseFetch(input, init);
+    });
+  }
+
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -150,6 +166,200 @@ test('project list paginates and requests the next page', async () => {
     '/api/v1/projects/?page=2',
   );
   expect(screen.getByText('Page 2')).toBeTruthy();
+});
+
+test('executor manages invitation status and can recover from a server validation error', async () => {
+  setCsrfCookie();
+  const invitationRows: Array<Record<string, unknown>> = [
+    {
+      id: '18b962e1-5084-47e3-b32a-08bdb01af37f',
+      project_id: projectId,
+      invited_email: 'pending@example.com',
+      status: 'pending',
+      expires_at: '2026-11-19T12:00:00Z',
+      accepted_at: null,
+      revoked_at: null,
+      created_at: '2026-11-12T12:00:00Z',
+    },
+    {
+      id: 'd6e88a87-43b0-4e18-891e-3f03238da9c5',
+      project_id: projectId,
+      invited_email: 'expired@example.com',
+      status: 'expired',
+      expires_at: '2026-11-11T12:00:00Z',
+      accepted_at: null,
+      revoked_at: null,
+      created_at: '2026-11-04T12:00:00Z',
+    },
+    {
+      id: '3e2a0ee3-7df1-4d10-8a74-5720e5d95ca1',
+      project_id: projectId,
+      invited_email: 'accepted@example.com',
+      status: 'accepted',
+      expires_at: '2026-11-11T12:00:00Z',
+      accepted_at: '2026-11-10T12:00:00Z',
+      revoked_at: null,
+      created_at: '2026-11-03T12:00:00Z',
+    },
+    {
+      id: 'ad74e8a1-782e-45c5-b891-df7c39969468',
+      project_id: projectId,
+      invited_email: 'revoked@example.com',
+      status: 'revoked',
+      expires_at: '2026-11-11T12:00:00Z',
+      accepted_at: null,
+      revoked_at: '2026-11-05T12:00:00Z',
+      created_at: '2026-11-02T12:00:00Z',
+    },
+  ];
+  let rejectFirstCreate = true;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === `/api/v1/projects/${projectId}/`) return jsonResponse(makeProject());
+    if (path === `/api/v1/projects/${projectId}/members/`)
+      return jsonResponse([makeMember('executor')]);
+    if (path === `/api/v1/projects/${projectId}/passport/`) return jsonResponse(makePassport());
+    if (path.startsWith(`/api/v1/projects/${projectId}/invitations/`)) {
+      if (!init?.method || init.method === 'GET') {
+        return jsonResponse({
+          count: invitationRows.length,
+          next: null,
+          previous: null,
+          results: invitationRows,
+        });
+      }
+      if (path === `/api/v1/projects/${projectId}/invitations/`) {
+        if (rejectFirstCreate) {
+          rejectFirstCreate = false;
+          return jsonResponse(
+            {
+              code: 'validation_error',
+              detail: 'Please correct the highlighted fields.',
+              errors: { invited_email: ['This email already has an active invitation.'] },
+              request_id: 'f37c2398-a0ce-45e6-8b65-a6eea790fed1',
+            },
+            400,
+          );
+        }
+        const created = {
+          id: '0d5b3ee2-4855-4335-a805-ae4f904344f8',
+          project_id: projectId,
+          invited_email: 'new@example.com',
+          status: 'pending',
+          expires_at: '2026-11-19T12:00:00Z',
+          accepted_at: null,
+          revoked_at: null,
+          created_at: '2026-11-12T12:01:00Z',
+        };
+        invitationRows.unshift(created);
+        return jsonResponse(created, 201);
+      }
+      const pendingId = '18b962e1-5084-47e3-b32a-08bdb01af37f';
+      expect(path).toBe(`/api/v1/projects/${projectId}/invitations/${pendingId}/revoke/`);
+      const pending = invitationRows.find((row) => row.id === pendingId);
+      if (pending) pending.status = 'revoked';
+      return jsonResponse(pending);
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  renderProjectPage(`/app/projects/${projectId}`, 'overview', user, {
+    mockEmptyInvitations: false,
+  });
+
+  expect(await screen.findByRole('heading', { name: 'Project invitations' })).toBeTruthy();
+  expect(await screen.findByText('pending@example.com')).toBeTruthy();
+  for (const [email, label] of [
+    ['pending@example.com', 'Pending'],
+    ['expired@example.com', 'Expired'],
+    ['accepted@example.com', 'Accepted'],
+    ['revoked@example.com', 'Revoked'],
+  ]) {
+    expect(screen.getByText(email)).toBeTruthy();
+    expect(screen.getByText(label, { exact: true })).toBeTruthy();
+  }
+
+  const emailInput = screen.getByLabelText('Customer email') as HTMLInputElement;
+  fireEvent.change(emailInput, { target: { value: 'new@example.com' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
+  expect(await screen.findByText('This email already has an active invitation.')).toBeTruthy();
+  expect(emailInput.value).toBe('new@example.com');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
+  expect(await screen.findByText('Invitation sent to new@example.com.')).toBeTruthy();
+  expect(await screen.findByText('new@example.com')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke invitation to pending@example.com' }));
+  expect(await screen.findByText('Invitation to pending@example.com revoked.')).toBeTruthy();
+  expect(screen.getAllByText('Revoked', { exact: true })).toHaveLength(2);
+});
+
+test('executor can reach and revoke an older invitation on the next page', async () => {
+  setCsrfCookie();
+  const newest = {
+    id: '18b962e1-5084-47e3-b32a-08bdb01af37f',
+    project_id: projectId,
+    invited_email: 'newest@example.com',
+    status: 'pending',
+    expires_at: '2026-11-19T12:00:00Z',
+    accepted_at: null,
+    revoked_at: null,
+    created_at: '2026-11-12T12:00:00Z',
+  };
+  const older: Omit<Invitation, 'status' | 'revoked_at'> & {
+    status: InvitationStatus;
+    revoked_at: string | null;
+  } = {
+    id: 'd6e88a87-43b0-4e18-891e-3f03238da9c5',
+    project_id: projectId,
+    invited_email: 'older@example.com',
+    status: 'pending',
+    expires_at: '2026-11-19T12:00:00Z',
+    accepted_at: null,
+    revoked_at: null,
+    created_at: '2026-11-04T12:00:00Z',
+  };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === `/api/v1/projects/${projectId}/`) return jsonResponse(makeProject());
+    if (path === `/api/v1/projects/${projectId}/members/`)
+      return jsonResponse([makeMember('executor')]);
+    if (path === `/api/v1/projects/${projectId}/passport/`) return jsonResponse(makePassport());
+    if (path.startsWith(`/api/v1/projects/${projectId}/invitations/?`)) {
+      if (path.includes('page=1')) {
+        return jsonResponse({
+          count: 2,
+          next: `http://test/api/v1/projects/${projectId}/invitations/?page=2&page_size=100`,
+          previous: null,
+          results: [newest],
+        });
+      }
+      expect(path).toContain('page=2&page_size=100');
+      return jsonResponse({
+        count: 2,
+        next: null,
+        previous: `http://test/api/v1/projects/${projectId}/invitations/?page=1&page_size=100`,
+        results: [older],
+      });
+    }
+    if (path === `/api/v1/projects/${projectId}/invitations/${older.id}/revoke/`) {
+      older.status = 'revoked';
+      older.revoked_at = '2026-11-12T12:02:00Z';
+      return jsonResponse(older);
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  renderProjectPage(`/app/projects/${projectId}`, 'overview', user, {
+    mockEmptyInvitations: false,
+  });
+
+  expect(await screen.findByText('newest@example.com')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Next invitations' }));
+  expect(await screen.findByText('older@example.com')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke invitation to older@example.com' }));
+  expect(await screen.findByText('Invitation to older@example.com revoked.')).toBeTruthy();
+  expect(screen.getByText('Revoked', { exact: true })).toBeTruthy();
 });
 
 test('archive list filters for archived projects and has a distinct empty state', async () => {

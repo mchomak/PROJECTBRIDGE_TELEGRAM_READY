@@ -114,13 +114,17 @@ storage.
 ## 5. Invitation security
 
 - Invitations are bound to a normalized email address.
-- Generate high-entropy random tokens.
-- Store only token hashes.
-- Return the raw invitation token only at creation time.
-- Enforce expiration and revocation.
+- Generate tokens with `secrets.token_urlsafe(32)` and store only their
+  SHA-256 hashes.
+- Send the raw token only in the outbound email link fragment; never
+  include it in API responses, database fields, application logs, or
+  audit metadata.
+- Expire invitations after seven days and allow revocation of pending
+  invitations by the active project executor.
 - Require the authenticated user’s verified email to match the invited
   email.
-- Rate-limit preview and acceptance endpoints.
+- Use shared Redis-backed limits: creation 20/hour/executor, preview
+  30/hour/IP, and acceptance 10/hour/user.
 - Do not reveal unnecessary project information before the invitation is
   validated.
 

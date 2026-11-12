@@ -181,9 +181,23 @@ Fields:
 - `created_at`
 
 The invitation is bound to a normalized email address. The raw token is
-returned only when the invitation is created; only its hash is stored.
+email-link-only and is never included in the invitation API response;
+only its hash is stored.
 Enforce at most one active invitation for a given project/email
 combination.
+
+`invited_email` uses the existing accounts normalization rule (trim and
+case-fold). `token_hash` is a unique SHA-256 hex digest. New invitations
+expire seven days after creation. A pending invitation whose expiry has
+passed is moved to `expired` when the executor lists invitations or
+attempts to invite that email again. A partial unique constraint permits
+at most one `pending` invitation per project and normalized email.
+
+The raw token is sent only in the outbound invitation link, in the URL
+fragment. It is absent from the API response, database, application logs,
+and project audit metadata. An active customer membership prevents another
+invitation for the project; the existing project membership constraint
+continues to enforce one active customer.
 
 ## 5. Questionnaire
 

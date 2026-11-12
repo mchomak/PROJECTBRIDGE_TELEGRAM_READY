@@ -12,6 +12,7 @@ import {
   type ProjectPassport,
   type ProjectType,
 } from '../../../entities/project';
+import { InvitationManager } from '../../../features/invitations';
 import {
   useProjectLifecycleAction,
   useUpdatePassport,
@@ -808,6 +809,7 @@ export function ProjectOverviewPage() {
             </div>
             <MemberList members={membersQuery.data} />
           </section>
+          {isExecutor && <InvitationManager projectId={project.id} canManage={canEdit} />}
         </div>
 
         <section className="project-panel passport-panel" aria-labelledby="passport-title">

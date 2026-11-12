@@ -427,6 +427,25 @@ textarea {
   background: #f2f4f5;
 }
 
+.status-badge--pending {
+  border-color: #e4d7b8;
+  color: #87691d;
+  background: #fbf7ec;
+}
+
+.status-badge--accepted {
+  border-color: #c1ded4;
+  color: #286d55;
+  background: #edf8f3;
+}
+
+.status-badge--expired,
+.status-badge--revoked {
+  border-color: #d9dfe2;
+  color: #68757d;
+  background: #f2f4f5;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -552,6 +571,107 @@ textarea {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 25px;
+}
+
+.invitation-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.invitation-form__actions {
+  margin: 0;
+}
+
+.invitation-readonly-note,
+.invitation-feedback {
+  margin: 0 0 16px;
+}
+
+.invitation-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #e8edef;
+  list-style: none;
+}
+
+.invitation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid #e8edef;
+}
+
+.invitation-row:last-child {
+  border-bottom: 0;
+}
+
+.invitation-row__main {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.invitation-row__email {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.invitation-row__meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.invitation-row__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.invitation-revoke {
+  min-height: 32px;
+  padding-inline: 7px;
+  font-size: 11px;
+}
+
+.invitation-loading,
+.invitation-empty-state,
+.invitation-list-error {
+  margin: 12px 0 0;
+  padding: 18px;
+  box-shadow: none;
+}
+
+.invitation-empty-state h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.invitation-empty-state p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.invitation-list-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--danger);
+}
+
+.invitation-list-error p {
+  margin: 0;
 }
 
 .form-actions--end {
@@ -939,6 +1059,31 @@ textarea {
   .project-panel,
   .passport-panel {
     padding: 18px;
+  }
+
+  .invitation-form {
+    grid-template-columns: 1fr;
+  }
+
+  .invitation-form__actions .button,
+  .invitation-list-error .button {
+    width: 100%;
+  }
+
+  .invitation-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .invitation-row__actions {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .invitation-list-error {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .overview-column {

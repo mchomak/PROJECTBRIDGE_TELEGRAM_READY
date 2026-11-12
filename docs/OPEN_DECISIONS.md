@@ -74,16 +74,20 @@ silently.
 ## API and implementation
 
 20. **Pagination defaults:** Set page sizes and cursor behavior.
-21. **Rate limits:** Stage 02 starts with authentication scopes of
+21. **Rate limits — invitation scopes resolved for Stage 04 on
+    2026-11-12:** Invitation creation is limited to 20/hour/executor,
+    preview to 30/hour/IP, and acceptance to 10/hour/user through the
+    shared Redis cache. See ADR-011. Limits for uploads, chat, and AI
+    actions remain open. Stage 02 authentication scopes remain
     `register` 5/hour, `login` 10/minute, `resend` 3/hour, and `confirm`
-    10/hour through the shared cache. Finalize limits for invitations,
-    uploads, chat, and AI actions, and review these initial values.
+    10/hour through the shared cache.
 22. **Idempotency storage:** Define key scope and retention for
     `Idempotency-Key`.
 23. **Optimistic concurrency:** Define which resources use version
     checks beyond passport and specification.
 24. **API response schemas:** Finalize serializer fields and error codes
-    for every endpoint.
+    for remaining endpoints. Stage 04 invitation list/create/revoke
+    schemas and error codes are defined in `api/API_CONTRACT.md`.
 25. **Password reset:** Define the reset flow.
 26. **Document parser libraries:** Select maintained PDF, DOCX, TXT, and
     Markdown parsers.

@@ -160,6 +160,11 @@ def _get_executor_project_for_update(*, project_id, actor) -> Project:
     return project
 
 
+def get_project_for_invitation_update(*, project_id, actor) -> Project:
+    """Return the executor's locked project for an invitation mutation."""
+    return _get_executor_project_for_update(project_id=project_id, actor=actor)
+
+
 def _transition_project(
     *, project_id, actor, expected_statuses, target_status, action, extra_updates=None
 ) -> Project:

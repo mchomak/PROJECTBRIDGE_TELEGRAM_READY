@@ -174,12 +174,28 @@ payloads, and is not exposed as an editable API field.
 | POST   | `/api/v1/invitations/preview/`                                      | Public, rate-limited          | Validate token and return safe invitation details |
 | POST   | `/api/v1/invitations/accept/`                                       | Authenticated, verified email | Accept invitation                                 |
 
+Create accepts `{ "invited_email": "customer@example.com" }` and
+returns the invitation id, project id, normalized email, status,
+expiration, lifecycle timestamps, and creation time. The response never
+contains the raw token or invitation link. List uses page-number
+pagination with a default page size of 20 and a maximum of 100; an active
+executor can list statuses in any project lifecycle state.
+
 The invitation is bound to a normalized email address. The authenticated
-user’s verified email must match it. The raw token is returned only when
-created; only its hash is stored.
-Invitations may be created and accepted only while a project is `draft`
-or `active`. Accepting an invitation for a `draft` project atomically
-adds the customer membership and moves the project to `active`.
+user’s verified email must match it. The raw token is included only in the
+outbound email link and is never returned by the API; only its hash is
+stored. Creation and revocation require the
+active executor and a `draft` or `active` project. Revocation applies to
+pending invitations only. A duplicate active invitation, an existing
+active customer, or a disallowed project status returns `409`. Invitation
+creation is limited to 20 requests per executor per UTC hour through the
+shared Redis cache and returns `429` when exceeded. The outbound email
+link is `<FRONTEND_BASE_URL>/invite/#token=<raw-token>`; the fragment
+keeps the token out of the HTTP request URL.
+
+Invitations may be accepted only while a project is `draft` or `active`.
+Accepting an invitation for a `draft` project atomically adds the customer
+membership and moves the project to `active`.
 
 ## 8. Questionnaire — `questionnaire`
 

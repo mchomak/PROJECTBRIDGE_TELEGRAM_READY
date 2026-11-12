@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from .views import (
     ArchiveProjectView,
@@ -15,6 +15,10 @@ app_name = "projects"
 
 urlpatterns = [
     path("", ProjectListCreateView.as_view(), name="project-list"),
+    path(
+        "<uuid:project_id>/invitations/",
+        include("apps.invitations.api.urls"),
+    ),
     path("<uuid:project_id>/", ProjectDetailView.as_view(), name="project-detail"),
     path(
         "<uuid:project_id>/members/",
