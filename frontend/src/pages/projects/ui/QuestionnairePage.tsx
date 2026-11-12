@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
-import { useProject, useProjectMembers } from '../../../entities/project';
+import { useProject, useProjectMembers, useProjectPassport } from '../../../entities/project';
 import {
   useProjectQuestionnaire,
+  useProjectQuestionnaireConflicts,
   type QuestionnaireAnswer,
   type QuestionnaireAnswers,
+  type QuestionnaireConflict,
   type QuestionnaireQuestion,
   type QuestionnaireValue,
 } from '../../../entities/questionnaire';
 import type { User } from '../../../entities/user';
 import {
+  useRefreshQuestionnaireDraftPassportVersion,
+  useRequestQuestionnaireCorrection,
+  useResolveQuestionnaireConflict,
   useSaveQuestionnaireDraft,
   useStartQuestionnaireDraft,
+  useSubmitQuestionnaire,
 } from '../../../features/questionnaire';
 import { ApiError, getApiFieldErrors } from '../../../shared/api';
 
@@ -107,21 +113,46 @@ function projectTypeLabel(projectType: string): string {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'Empty';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function conflictFieldLabel(conflict: QuestionnaireConflict): string {
+  const question = conflict.mapped_field.split('.').at(-1) ?? conflict.mapped_field;
+  return question.replaceAll('_', ' ');
+}
+
 export function QuestionnairePage() {
   const user = useOutletContext<User>();
   const { projectId = '' } = useParams();
   const projectQuery = useProject(projectId);
   const membersQuery = useProjectMembers(projectId);
+  const member = membersQuery.data?.find((candidate) => candidate.user_id === user.id);
+  const isExecutor = member?.role === 'executor';
   const questionnaireQuery = useProjectQuestionnaire(projectId);
+  const conflictsQuery = useProjectQuestionnaireConflicts(projectId, isExecutor);
+  const passportQuery = useProjectPassport(projectId, isExecutor);
   const startDraft = useStartQuestionnaireDraft(projectId);
   const submissionId = questionnaireQuery.data?.submission?.id ?? '';
   const saveDraft = useSaveQuestionnaireDraft(projectId, submissionId);
+  const submitSubmission = useSubmitQuestionnaire(projectId, submissionId);
+  const refreshDraftVersion = useRefreshQuestionnaireDraftPassportVersion(projectId, submissionId);
+  const requestCorrection = useRequestQuestionnaireCorrection(projectId, submissionId);
+  const resolveConflict = useResolveQuestionnaireConflict(projectId);
   const [answers, setAnswers] = useState<QuestionnaireAnswers>({});
   const [editedKeys, setEditedKeys] = useState<Set<string>>(() => new Set());
+  const [confirmPrefilled, setConfirmPrefilled] = useState(false);
 
   useEffect(() => {
     setAnswers(answersFromSubmission(questionnaireQuery.data?.submission?.answers));
     setEditedKeys(new Set());
+    setConfirmPrefilled(false);
   }, [questionnaireQuery.data?.submission]);
 
   const schema = questionnaireQuery.data?.schema;
@@ -133,6 +164,11 @@ export function QuestionnairePage() {
   const serverAnswers = questionnaireQuery.data?.submission?.answers ?? [];
   const serverAnswerByKey = new Map(serverAnswers.map((answer) => [answer.question_key, answer]));
   const fieldErrors = getApiFieldErrors(saveDraft.error);
+  const submitFieldErrors = getApiFieldErrors(submitSubmission.error);
+  const stalePassportVersionError =
+    submitSubmission.error instanceof ApiError &&
+    submitSubmission.error.status === 409 &&
+    submitSubmission.error.payload?.detail.includes('passport changed after this draft started');
   const loadError = projectQuery.error ?? membersQuery.error ?? questionnaireQuery.error;
   const hasLoadError = projectQuery.isError || membersQuery.isError || questionnaireQuery.isError;
   const isLoading =
@@ -175,6 +211,7 @@ export function QuestionnairePage() {
     });
     saveDraft.reset();
     startDraft.reset();
+    refreshDraftVersion.reset();
   }
 
   function renderQuestion(question: QuestionnaireQuestion) {
@@ -312,7 +349,6 @@ export function QuestionnairePage() {
     );
   }
 
-  const member = membersQuery.data.find((candidate) => candidate.user_id === user.id);
   if (!member) {
     return (
       <main className="workspace-page workspace-page--narrow">
@@ -329,10 +365,35 @@ export function QuestionnairePage() {
   const canEdit =
     isCustomer && projectQuery.data.status === 'active' && submission?.status === 'draft';
   const canStart = isCustomer && projectQuery.data.status === 'active' && !submission;
+  const unconfirmedPrefills = serverAnswers.some(
+    (answer) => answer.origin === 'prefilled' && !answer.is_confirmed,
+  );
+  const canSubmit = canEdit && (!unconfirmedPrefills || confirmPrefilled) && !saveDraft.isPending;
 
   function save(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     if (submission) saveDraft.mutate(editedAnswers(answers, editedKeys));
+  }
+
+  async function submit() {
+    if (!submission) return;
+    try {
+      if (editedKeys.size > 0) {
+        await saveDraft.mutateAsync(editedAnswers(answers, editedKeys));
+      }
+      await submitSubmission.mutateAsync({ confirm_prefilled: confirmPrefilled });
+    } catch {
+      // The mutations retain their errors for the form's recovery message.
+    }
+  }
+
+  function resolve(conflict: QuestionnaireConflict, decision: 'keep_passport' | 'apply_answer') {
+    const expectedVersion = passportQuery.data?.version;
+    if (!expectedVersion) return;
+    resolveConflict.mutate({
+      conflictId: conflict.id,
+      request: { decision, expected_passport_version: expectedVersion },
+    });
   }
 
   return (
@@ -355,7 +416,13 @@ export function QuestionnairePage() {
 
       {submission ? (
         <p className="questionnaire-status" role="status">
-          Draft questionnaire
+          {submission.status === 'submitted'
+            ? 'Submitted questionnaire'
+            : submission.supersedes_id
+              ? 'Correction draft'
+              : submission.status === 'correction_requested'
+                ? 'Correction requested'
+                : 'Draft questionnaire'}
         </p>
       ) : (
         <p className="questionnaire-empty">No draft has been started yet.</p>
@@ -400,6 +467,53 @@ export function QuestionnairePage() {
               Draft saved.
             </p>
           )}
+          {unconfirmedPrefills && (
+            <label className="questionnaire-confirmation">
+              <input
+                checked={confirmPrefilled}
+                onChange={(event) => setConfirmPrefilled(event.currentTarget.checked)}
+                type="checkbox"
+              />
+              <span>I reviewed and confirm the answers prefilled from the passport.</span>
+            </label>
+          )}
+          {submitSubmission.error && (
+            <div className="form-error" role="alert">
+              <p>
+                {stalePassportVersionError
+                  ? 'The project passport changed after this draft started. Your draft is safe; refresh its version, review your answers, and submit again.'
+                  : submitSubmission.error.message || "We couldn't submit this questionnaire."}
+              </p>
+              {stalePassportVersionError && (
+                <button
+                  className="button button--secondary"
+                  disabled={refreshDraftVersion.isPending}
+                  onClick={() => {
+                    submitSubmission.reset();
+                    refreshDraftVersion.mutate();
+                  }}
+                  type="button"
+                >
+                  {refreshDraftVersion.isPending ? 'Refreshing...' : 'Refresh draft version'}
+                </button>
+              )}
+            </div>
+          )}
+          {refreshDraftVersion.error && (
+            <p className="form-error" role="alert">
+              {refreshDraftVersion.error.message || "We couldn't refresh this draft."}
+            </p>
+          )}
+          {refreshDraftVersion.isSuccess && (
+            <p className="success-message" role="status">
+              Draft version refreshed. Review your answers and submit again.
+            </p>
+          )}
+          {submitFieldErrors.confirm_prefilled?.length ? (
+            <p className="form-error" role="alert">
+              {submitFieldErrors.confirm_prefilled.join(' ')}
+            </p>
+          ) : null}
           <div className="form-actions form-actions--end">
             {saveDraft.isError && (
               <button
@@ -418,6 +532,14 @@ export function QuestionnairePage() {
             >
               {saveDraft.isPending ? 'Saving...' : 'Save draft'}
             </button>
+            <button
+              className="button button--primary"
+              disabled={!canSubmit || submitSubmission.isPending}
+              onClick={() => void submit()}
+              type="button"
+            >
+              {submitSubmission.isPending ? 'Submitting...' : 'Submit answers'}
+            </button>
           </div>
         </form>
       )}
@@ -425,9 +547,13 @@ export function QuestionnairePage() {
       {!canEdit && submission && (
         <section className="project-panel questionnaire-panel">
           <p>
-            {isCustomer
-              ? 'This project is read-only. The questionnaire draft is available for viewing.'
-              : 'The customer can edit this questionnaire draft.'}
+            {submission.status === 'submitted'
+              ? 'Submitted. Answers are locked.'
+              : isCustomer
+                ? 'This project is read-only. The questionnaire is available for viewing.'
+                : submission.supersedes_id
+                  ? 'The customer can edit this correction draft.'
+                  : 'The customer can edit this questionnaire draft.'}
           </p>
           <dl className="questionnaire-summary">
             {submission.answers.map((answer) => (
@@ -442,6 +568,129 @@ export function QuestionnairePage() {
               </div>
             ))}
           </dl>
+          {isExecutor &&
+            submission.status === 'submitted' &&
+            projectQuery.data.status === 'active' && (
+              <div className="form-actions form-actions--end">
+                {requestCorrection.error && (
+                  <p className="form-error" role="alert">
+                    {requestCorrection.error.message}
+                  </p>
+                )}
+                {requestCorrection.isSuccess && (
+                  <p className="success-message" role="status">
+                    Correction draft requested.
+                  </p>
+                )}
+                <button
+                  className="button button--secondary"
+                  disabled={requestCorrection.isPending}
+                  onClick={() => requestCorrection.mutate()}
+                  type="button"
+                >
+                  {requestCorrection.isPending ? 'Requesting...' : 'Request correction'}
+                </button>
+              </div>
+            )}
+        </section>
+      )}
+
+      {questionnaireQuery.data.history.length > 1 && (
+        <section
+          className="project-panel questionnaire-panel"
+          aria-labelledby="questionnaire-history-title"
+        >
+          <h2 id="questionnaire-history-title">Questionnaire history</h2>
+          <ol className="questionnaire-history">
+            {questionnaireQuery.data.history.map((version) => (
+              <li key={version.id}>
+                <span>
+                  {version.status === 'correction_requested'
+                    ? 'Correction requested'
+                    : version.status === 'submitted'
+                      ? 'Submitted'
+                      : version.supersedes_id
+                        ? 'Correction draft'
+                        : 'Draft'}
+                </span>
+                <time dateTime={version.started_at}>
+                  {new Date(version.started_at).toLocaleDateString()}
+                </time>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {isExecutor && (
+        <section
+          className="project-panel questionnaire-panel"
+          aria-labelledby="questionnaire-conflicts-title"
+        >
+          <h2 id="questionnaire-conflicts-title">Questionnaire conflicts</h2>
+          {conflictsQuery.isPending && <p className="questionnaire-help">Loading conflicts...</p>}
+          {conflictsQuery.isError && (
+            <div className="form-error" role="alert">
+              <p>{conflictsQuery.error.message}</p>
+              <button
+                className="button button--secondary"
+                onClick={() => void conflictsQuery.refetch()}
+                type="button"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {resolveConflict.error && (
+            <div className="form-error" role="alert">
+              <p>{resolveConflict.error.message}</p>
+              <button
+                className="button button--secondary"
+                onClick={() =>
+                  void Promise.all([passportQuery.refetch(), conflictsQuery.refetch()])
+                }
+                type="button"
+              >
+                Refresh passport and conflicts
+              </button>
+            </div>
+          )}
+          {!conflictsQuery.isPending && !conflictsQuery.isError && !conflictsQuery.data?.length && (
+            <p className="questionnaire-empty">No unresolved questionnaire conflicts.</p>
+          )}
+          {conflictsQuery.data?.map((conflict) => (
+            <article className="questionnaire-conflict" key={conflict.id}>
+              <h3>{conflictFieldLabel(conflict)}</h3>
+              <dl className="questionnaire-summary">
+                <div>
+                  <dt>Current passport value</dt>
+                  <dd>{displayValue(conflict.passport_value)}</dd>
+                </div>
+                <div>
+                  <dt>Customer answer</dt>
+                  <dd>{displayValue(conflict.answer_value)}</dd>
+                </div>
+              </dl>
+              <div className="form-actions">
+                <button
+                  className="button button--secondary"
+                  disabled={resolveConflict.isPending || !passportQuery.data}
+                  onClick={() => resolve(conflict, 'keep_passport')}
+                  type="button"
+                >
+                  Keep passport value
+                </button>
+                <button
+                  className="button button--primary"
+                  disabled={resolveConflict.isPending || !passportQuery.data}
+                  onClick={() => resolve(conflict, 'apply_answer')}
+                  type="button"
+                >
+                  Apply questionnaire answer
+                </button>
+              </div>
+            </article>
+          ))}
         </section>
       )}
 

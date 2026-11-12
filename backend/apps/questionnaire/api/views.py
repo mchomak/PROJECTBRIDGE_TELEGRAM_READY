@@ -16,19 +16,31 @@ from apps.accounts.api.core.permissions import (
 from apps.accounts.api.core.serializers import ErrorEnvelopeSerializer
 from apps.questionnaire.schemas.registry import QuestionnaireSchemaError
 from apps.questionnaire.services import (
+    QuestionnaireConfirmationRequiredError,
     QuestionnaireNotFoundError,
+    QuestionnairePassportVersionConflictError,
     QuestionnairePermissionError,
     QuestionnaireStateConflictError,
+    get_questionnaire_conflicts_for_project,
     get_questionnaire_for_project,
+    refresh_submission_passport_version,
+    request_correction,
+    resolve_conflict,
     save_answers,
     start_submission,
+    submit_submission,
 )
 
 from .serializers import (
     ProjectQuestionnaireResponseSerializer,
+    QuestionnaireConflictResponseSerializer,
     QuestionnaireSubmissionResponseSerializer,
+    RefreshQuestionnairePassportVersionSerializer,
+    RequestQuestionnaireCorrectionSerializer,
+    ResolveQuestionnaireConflictSerializer,
     SaveQuestionnaireAnswersSerializer,
     StartQuestionnaireSubmissionSerializer,
+    SubmitQuestionnaireSubmissionSerializer,
 )
 
 
@@ -38,15 +50,29 @@ class QuestionnaireConflict(APIException):
     default_code = "conflict"
 
 
+class QuestionnairePassportConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = (
+        "The project passport changed after this questionnaire draft started."
+    )
+    default_code = "conflict"
+
+
 def _translate_service_error(error):
     if isinstance(error, QuestionnaireNotFoundError):
         raise NotFound("The questionnaire is unavailable to your account.") from None
     if isinstance(error, QuestionnairePermissionError):
         raise PermissionDenied(
-            "Only the active customer can edit the questionnaire."
+            "You do not have permission for this questionnaire action."
         ) from None
     if isinstance(error, QuestionnaireStateConflictError):
         raise QuestionnaireConflict from None
+    if isinstance(error, QuestionnairePassportVersionConflictError):
+        raise QuestionnairePassportConflict from None
+    if isinstance(error, QuestionnaireConfirmationRequiredError):
+        raise ValidationError(
+            {"confirm_prefilled": ["Confirm the prefilled answers before submitting."]}
+        ) from None
     if isinstance(error, QuestionnaireSchemaError):
         if error.field:
             message = str(error).removeprefix(f"{error.field}: ")
@@ -77,6 +103,7 @@ class ProjectQuestionnaireView(CsrfSanitizingAPIView):
         payload = {
             "schema": result["schema"],
             "submission": result["submission"],
+            "history": result["history"],
         }
         return Response(ProjectQuestionnaireResponseSerializer(payload).data)
 
@@ -117,6 +144,7 @@ class StartQuestionnaireSubmissionView(CsrfSanitizingAPIView):
         response_status = (
             status.HTTP_200_OK
             if before["submission"] is not None
+            and before["submission"].status == "draft"
             else status.HTTP_201_CREATED
         )
         return Response(
@@ -158,3 +186,171 @@ class SaveQuestionnaireAnswersView(CsrfSanitizingAPIView):
         ) as exc:
             _translate_service_error(exc)
         return Response(QuestionnaireSubmissionResponseSerializer(submission).data)
+
+
+class RefreshQuestionnairePassportVersionView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["questionnaire"],
+        operation_id="questionnaire_submission_refresh_passport_version",
+        request=RefreshQuestionnairePassportVersionSerializer,
+        responses={
+            200: QuestionnaireSubmissionResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, submission_id):
+        serializer = RefreshQuestionnairePassportVersionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            submission = refresh_submission_passport_version(
+                submission_id=submission_id,
+                actor=request.user,
+            )
+        except (
+            QuestionnaireNotFoundError,
+            QuestionnairePermissionError,
+            QuestionnaireStateConflictError,
+        ) as exc:
+            _translate_service_error(exc)
+        return Response(QuestionnaireSubmissionResponseSerializer(submission).data)
+
+
+class SubmitQuestionnaireSubmissionView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["questionnaire"],
+        operation_id="questionnaire_submission_submit",
+        request=SubmitQuestionnaireSubmissionSerializer,
+        responses={
+            200: QuestionnaireSubmissionResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, submission_id):
+        serializer = SubmitQuestionnaireSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            submission = submit_submission(
+                submission_id=submission_id,
+                actor=request.user,
+                confirm_prefilled=serializer.validated_data["confirm_prefilled"],
+            )
+        except (
+            QuestionnaireNotFoundError,
+            QuestionnairePermissionError,
+            QuestionnaireStateConflictError,
+            QuestionnairePassportVersionConflictError,
+            QuestionnaireConfirmationRequiredError,
+            QuestionnaireSchemaError,
+        ) as exc:
+            _translate_service_error(exc)
+        return Response(QuestionnaireSubmissionResponseSerializer(submission).data)
+
+
+class RequestQuestionnaireCorrectionView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["questionnaire"],
+        operation_id="questionnaire_submission_request_correction",
+        request=RequestQuestionnaireCorrectionSerializer,
+        responses={
+            200: QuestionnaireSubmissionResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, submission_id):
+        serializer = RequestQuestionnaireCorrectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            correction = request_correction(
+                submission_id=submission_id,
+                actor=request.user,
+            )
+        except (
+            QuestionnaireNotFoundError,
+            QuestionnairePermissionError,
+            QuestionnaireStateConflictError,
+        ) as exc:
+            _translate_service_error(exc)
+        return Response(QuestionnaireSubmissionResponseSerializer(correction).data)
+
+
+class ProjectQuestionnaireConflictListView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["questionnaire"],
+        operation_id="questionnaire_project_conflicts_list",
+        responses={
+            200: QuestionnaireConflictResponseSerializer(many=True),
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+        },
+    )
+    def get(self, request, project_id):
+        try:
+            conflicts = get_questionnaire_conflicts_for_project(
+                project_id=project_id,
+                actor=request.user,
+            )
+        except (QuestionnaireNotFoundError, QuestionnairePermissionError) as exc:
+            _translate_service_error(exc)
+        return Response(
+            QuestionnaireConflictResponseSerializer(conflicts, many=True).data
+        )
+
+
+class ResolveQuestionnaireConflictView(CsrfSanitizingAPIView):
+    permission_classes = [RequireAuthenticatedUser, RequireCsrfForUnsafeRequests]
+
+    @extend_schema(
+        tags=["questionnaire"],
+        operation_id="questionnaire_conflict_resolve",
+        request=ResolveQuestionnaireConflictSerializer,
+        responses={
+            200: QuestionnaireConflictResponseSerializer,
+            400: ErrorEnvelopeSerializer,
+            401: ErrorEnvelopeSerializer,
+            403: ErrorEnvelopeSerializer,
+            404: ErrorEnvelopeSerializer,
+            409: ErrorEnvelopeSerializer,
+        },
+    )
+    def post(self, request, conflict_id):
+        serializer = ResolveQuestionnaireConflictSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            conflict = resolve_conflict(
+                conflict_id=conflict_id,
+                actor=request.user,
+                decision=serializer.validated_data["decision"],
+                expected_passport_version=serializer.validated_data[
+                    "expected_passport_version"
+                ],
+            )
+        except (
+            QuestionnaireNotFoundError,
+            QuestionnairePermissionError,
+            QuestionnaireStateConflictError,
+            QuestionnairePassportVersionConflictError,
+            QuestionnaireSchemaError,
+        ) as exc:
+            _translate_service_error(exc)
+        return Response(QuestionnaireConflictResponseSerializer(conflict).data)

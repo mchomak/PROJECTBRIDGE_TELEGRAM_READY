@@ -326,6 +326,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/questionnaire/conflicts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["questionnaire_project_conflicts_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/questionnaire/submissions/": {
         parameters: {
             query?: never;
@@ -374,6 +390,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questionnaire/conflicts/{conflict_id}/resolve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["questionnaire_conflict_resolve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/questionnaire/submissions/{submission_id}/answers/": {
         parameters: {
             query?: never;
@@ -388,6 +420,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["questionnaire_answers_save"];
+        trace?: never;
+    };
+    "/api/v1/questionnaire/submissions/{submission_id}/refresh-passport-version/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["questionnaire_submission_refresh_passport_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questionnaire/submissions/{submission_id}/request-correction/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["questionnaire_submission_request_correction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/questionnaire/submissions/{submission_id}/submit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["questionnaire_submission_submit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -410,6 +490,12 @@ export interface components {
         CsrfToken: {
             csrf_token: string;
         };
+        /**
+         * @description * `keep_passport` - Keep passport value
+         *     * `apply_answer` - Apply questionnaire answer
+         * @enum {string}
+         */
+        DecisionEnum: "keep_passport" | "apply_answer";
         ErrorEnvelope: {
             code: string;
             detail: string;
@@ -461,7 +547,7 @@ export interface components {
             email_hint: string;
             /** Format: date-time */
             expires_at: string;
-            status: components["schemas"]["Status810Enum"];
+            status: components["schemas"]["ProjectInvitationStatusEnum"];
         };
         InvitationResponse: {
             /** Format: uuid */
@@ -470,7 +556,7 @@ export interface components {
             readonly project_id: string;
             /** Format: email */
             readonly invited_email: string;
-            readonly status: components["schemas"]["Status810Enum"];
+            readonly status: components["schemas"]["ProjectInvitationStatusEnum"];
             /** Format: date-time */
             readonly expires_at: string;
             /** Format: date-time */
@@ -480,6 +566,8 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        /** @enum {unknown} */
+        NullEnum: null;
         /**
          * @description * `prefilled` - Prefilled from passport
          *     * `customer` - Provided by customer
@@ -501,6 +589,14 @@ export interface components {
             project_type: components["schemas"]["ProjectTypeEnum"];
             description?: string | null;
         };
+        /**
+         * @description * `pending` - Pending
+         *     * `accepted` - Accepted
+         *     * `revoked` - Revoked
+         *     * `expired` - Expired
+         * @enum {string}
+         */
+        ProjectInvitationStatusEnum: "pending" | "accepted" | "revoked" | "expired";
         ProjectListResponse: {
             count: number;
             /** Format: uri */
@@ -572,6 +668,7 @@ export interface components {
         ProjectQuestionnaireResponse: {
             schema: components["schemas"]["QuestionnaireSchemaResponse"];
             submission: components["schemas"]["QuestionnaireSubmissionResponse"] | null;
+            history: components["schemas"]["QuestionnaireSubmissionResponse"][];
         };
         ProjectResponse: {
             /** Format: uuid */
@@ -579,7 +676,7 @@ export interface components {
             readonly name: string;
             readonly description: string | null;
             readonly project_type: components["schemas"]["ProjectTypeEnum"];
-            readonly status: components["schemas"]["ProjectResponseStatusEnum"];
+            readonly status: components["schemas"]["ProjectStatusEnum"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -596,7 +693,7 @@ export interface components {
          *     * `archived` - Archived
          * @enum {string}
          */
-        ProjectResponseStatusEnum: "draft" | "active" | "completed" | "archived";
+        ProjectStatusEnum: "draft" | "active" | "completed" | "archived";
         /**
          * @description * `website` - Website
          *     * `telegram_bot` - Telegram bot
@@ -613,6 +710,30 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        QuestionnaireConflictResponse: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly submission_id: string;
+            readonly question_key: string;
+            readonly mapped_field: string;
+            readonly passport_value: unknown;
+            readonly answer_value: unknown;
+            readonly status: components["schemas"]["QuestionnaireConflictStatusEnum"];
+            readonly decision: (components["schemas"]["DecisionEnum"] | components["schemas"]["NullEnum"]) | null;
+            /** Format: uuid */
+            readonly reviewed_by_id: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `resolved` - Resolved
+         * @enum {string}
+         */
+        QuestionnaireConflictStatusEnum: "pending" | "resolved";
         QuestionnaireQuestionSchema: {
             key: string;
             label: string;
@@ -643,9 +764,18 @@ export interface components {
             readonly project_id: string;
             readonly schema_key: string;
             readonly schema_version: number;
-            readonly status: components["schemas"]["QuestionnaireSubmissionResponseStatusEnum"];
+            readonly passport_version: number;
+            readonly status: components["schemas"]["QuestionnaireSubmissionStatusEnum"];
+            /** Format: uuid */
+            readonly started_by_id: string;
             /** Format: date-time */
             readonly started_at: string;
+            /** Format: uuid */
+            readonly submitted_by_id: string | null;
+            /** Format: date-time */
+            readonly submitted_at: string | null;
+            /** Format: uuid */
+            readonly supersedes_id: string | null;
             readonly answers: components["schemas"]["QuestionnaireAnswerResponse"][];
         };
         /**
@@ -654,7 +784,7 @@ export interface components {
          *     * `correction_requested` - Correction requested
          * @enum {string}
          */
-        QuestionnaireSubmissionResponseStatusEnum: "draft" | "submitted" | "correction_requested";
+        QuestionnaireSubmissionStatusEnum: "draft" | "submitted" | "correction_requested";
         ResendVerificationRequest: {
             /** Format: email */
             email?: string;
@@ -662,20 +792,20 @@ export interface components {
         ResendVerificationResponse: {
             detail: string;
         };
+        ResolveQuestionnaireConflict: {
+            decision: components["schemas"]["DecisionEnum"];
+            expected_passport_version: number;
+        };
         /**
          * @description * `executor` - Executor
          *     * `customer` - Customer
          * @enum {string}
          */
         RoleEnum: "executor" | "customer";
-        /**
-         * @description * `pending` - Pending
-         *     * `accepted` - Accepted
-         *     * `revoked` - Revoked
-         *     * `expired` - Expired
-         * @enum {string}
-         */
-        Status810Enum: "pending" | "accepted" | "revoked" | "expired";
+        SubmitQuestionnaireSubmission: {
+            /** @default false */
+            confirm_prefilled: boolean;
+        };
         /**
          * @description * `text` - text
          *     * `textarea` - textarea
@@ -1873,6 +2003,51 @@ export interface operations {
             };
         };
     };
+    questionnaire_project_conflicts_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireConflictResponse"][];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     questionnaire_submission_start: {
         parameters: {
             query?: never;
@@ -2048,6 +2223,73 @@ export interface operations {
             };
         };
     };
+    questionnaire_conflict_resolve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveQuestionnaireConflict"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResolveQuestionnaireConflict"];
+                "multipart/form-data": components["schemas"]["ResolveQuestionnaireConflict"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireConflictResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     questionnaire_answers_save: {
         parameters: {
             query?: never;
@@ -2062,6 +2304,195 @@ export interface operations {
                 "application/json": components["schemas"]["PatchedSaveQuestionnaireAnswers"];
                 "application/x-www-form-urlencoded": components["schemas"]["PatchedSaveQuestionnaireAnswers"];
                 "multipart/form-data": components["schemas"]["PatchedSaveQuestionnaireAnswers"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireSubmissionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    questionnaire_submission_refresh_passport_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireSubmissionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    questionnaire_submission_request_correction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireSubmissionResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    questionnaire_submission_submit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SubmitQuestionnaireSubmission"];
+                "application/x-www-form-urlencoded": components["schemas"]["SubmitQuestionnaireSubmission"];
+                "multipart/form-data": components["schemas"]["SubmitQuestionnaireSubmission"];
             };
         };
         responses: {

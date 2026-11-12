@@ -126,6 +126,18 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "ProjectBridge API",
     "DESCRIPTION": "ProjectBridge operational API scaffold.",
     "VERSION": "1.0.0",
+    "ENUM_NAME_OVERRIDES": {
+        "ProjectStatusEnum": "apps.projects.models.ProjectStatus.choices",
+        "ProjectInvitationStatusEnum": (
+            "apps.invitations.models.ProjectInvitationStatus.choices"
+        ),
+        "QuestionnaireSubmissionStatusEnum": (
+            "apps.questionnaire.models.QuestionnaireSubmissionStatus.choices"
+        ),
+        "QuestionnaireConflictStatusEnum": (
+            "apps.questionnaire.models.QuestionnaireConflictStatus.choices"
+        ),
+    },
 }
 
 

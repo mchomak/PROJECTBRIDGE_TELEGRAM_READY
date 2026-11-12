@@ -1,1 +1,8 @@
-export { useSaveQuestionnaireDraft, useStartQuestionnaireDraft } from './model/mutations';
+export {
+  useRefreshQuestionnaireDraftPassportVersion,
+  useRequestQuestionnaireCorrection,
+  useResolveQuestionnaireConflict,
+  useSaveQuestionnaireDraft,
+  useStartQuestionnaireDraft,
+  useSubmitQuestionnaire,
+} from './model/mutations';

@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F
@@ -392,6 +395,131 @@ def update_passport(*, project_id, actor, expected_version, changes) -> ProjectP
             project_id=project.pk,
             actor_id=actor.pk,
             action="project.passport_updated",
+            target_type="passport",
+            target_id=passport.pk,
+            metadata={
+                "changed_fields": sorted(changes),
+                "previous_version": expected_version,
+                "version": new_version,
+            },
+        )
+    return passport
+
+
+def lock_passport_for_update(*, project_id, actor, expected_version) -> ProjectPassport:
+    """Lock and validate an executor's active-project passport for a transaction."""
+    if (
+        isinstance(expected_version, bool)
+        or not isinstance(expected_version, int)
+        or expected_version < 1
+    ):
+        raise ValidationError({"version": ["A positive version is required."]})
+
+    with transaction.atomic():
+        project = _get_executor_project_for_update(project_id=project_id, actor=actor)
+        if project.status != ProjectStatus.ACTIVE:
+            raise ProjectStateConflictError
+
+        passport = (
+            ProjectPassport.objects.select_for_update().filter(project=project).first()
+        )
+        if passport is None:
+            raise ProjectNotFoundError
+        if passport.version != expected_version:
+            raise ProjectPassportVersionConflictError
+        return passport
+
+
+def apply_questionnaire_mapping(
+    *, project_id, actor, expected_version, mapped_changes
+) -> ProjectPassport:
+    """Apply validated customer questionnaire mappings through the passport owner."""
+    if not isinstance(mapped_changes, dict):
+        raise ValidationError(
+            {"non_field_errors": ["Mapped changes must be an object."]}
+        )
+    unknown_fields = set(mapped_changes) - PASSPORT_EDITABLE_FIELDS
+    if unknown_fields:
+        raise ValidationError(
+            {"non_field_errors": ["Unknown questionnaire mappings were provided."]}
+        )
+    if (
+        isinstance(expected_version, bool)
+        or not isinstance(expected_version, int)
+        or expected_version < 1
+    ):
+        raise ValidationError({"version": ["A positive version is required."]})
+
+    with transaction.atomic():
+        try:
+            project = Project.objects.select_for_update().get(pk=project_id)
+        except Project.DoesNotExist as exc:
+            raise ProjectNotFoundError from exc
+
+        membership = ProjectMember.objects.filter(
+            project=project,
+            user=actor,
+            status=ProjectMemberStatus.ACTIVE,
+        ).first()
+        if membership is None:
+            raise ProjectNotFoundError
+        if (
+            membership.role != ProjectMemberRole.CUSTOMER
+            or getattr(actor, "email_verified_at", None) is None
+        ):
+            raise ProjectPermissionError
+        if project.status != ProjectStatus.ACTIVE:
+            raise ProjectStateConflictError
+
+        passport = (
+            ProjectPassport.objects.select_for_update().filter(project=project).first()
+        )
+        if passport is None:
+            raise ProjectNotFoundError
+        if passport.version != expected_version:
+            raise ProjectPassportVersionConflictError
+
+        for field, value in mapped_changes.items():
+            if field in {"goal", "target_audience", "expected_result"}:
+                valid = isinstance(value, str)
+            elif field == "deadline":
+                valid = value is None or isinstance(value, date)
+            elif field in {"budget_min", "budget_max"}:
+                valid = value is None or isinstance(value, (str, int, Decimal))
+            elif field == "currency":
+                valid = value is None or isinstance(value, str)
+            else:
+                valid = isinstance(value, dict)
+            if not valid:
+                raise ValidationError(
+                    {field: ["The mapped value has an invalid type."]}
+                )
+
+        changes = {
+            field: value
+            for field, value in mapped_changes.items()
+            if getattr(passport, field) != value
+        }
+        if not changes:
+            return passport
+
+        new_version = expected_version + 1
+        updated_count = ProjectPassport.objects.filter(
+            pk=passport.pk,
+            version=expected_version,
+        ).update(
+            **changes,
+            version=F("version") + 1,
+            updated_at=timezone.now(),
+        )
+        if updated_count != 1:
+            raise ProjectPassportVersionConflictError
+
+        passport.refresh_from_db()
+        record_project_action(
+            project_id=project.pk,
+            actor_id=actor.pk,
+            action="project.questionnaire_mapped",
             target_type="passport",
             target_id=passport.pk,
             metadata={

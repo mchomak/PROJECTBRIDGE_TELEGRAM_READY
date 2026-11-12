@@ -498,3 +498,113 @@ def test_invitation_service_adds_customer_and_activates_draft_atomically():
     )
     assert audit.target_id == str(membership.pk)
     assert audit.metadata == {"from_status": "draft", "to_status": "active"}
+
+
+@pytest.mark.django_db
+def test_questionnaire_mapping_is_customer_owned_versioned_and_audited():
+    from django.utils import timezone
+
+    from apps.common.models import ProjectAuditLog
+    from apps.projects.models import ProjectMember, ProjectPassport
+    from apps.projects.services import (
+        ProjectPassportVersionConflictError,
+        apply_questionnaire_mapping,
+        create_project,
+    )
+
+    executor = get_user_model().objects.create_user(
+        email="questionnaire-owner@example.com"
+    )
+    customer = get_user_model().objects.create_user(
+        email="questionnaire-customer@example.com"
+    )
+    customer.email_verified_at = timezone.now()
+    customer.save(update_fields=["email_verified_at"])
+    project = create_project(
+        actor=executor,
+        data={"name": "Questionnaire mapping", "project_type": "website"},
+    )
+    project.status = "active"
+    project.save(update_fields=["status", "updated_at"])
+    ProjectMember.objects.create(project=project, user=customer, role="customer")
+
+    passport = apply_questionnaire_mapping(
+        project_id=project.pk,
+        actor=customer,
+        expected_version=1,
+        mapped_changes={
+            "goal": "Customer goal",
+            "functional_scope": {"website": "New account workflow"},
+        },
+    )
+
+    assert passport.version == 2
+    assert passport.goal == "Customer goal"
+    assert passport.functional_scope == {"website": "New account workflow"}
+    audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="project.questionnaire_mapped",
+    )
+    assert audit.actor_id == customer.pk
+    assert audit.metadata == {
+        "changed_fields": ["functional_scope", "goal"],
+        "previous_version": 1,
+        "version": 2,
+    }
+    assert "Customer goal" not in str(audit.metadata)
+
+    with pytest.raises(ProjectPassportVersionConflictError):
+        apply_questionnaire_mapping(
+            project_id=project.pk,
+            actor=customer,
+            expected_version=1,
+            mapped_changes={"goal": "Stale customer goal"},
+        )
+    assert ProjectPassport.objects.get(project=project).goal == "Customer goal"
+
+
+@pytest.mark.django_db
+def test_questionnaire_mapping_rejects_invalid_actor_and_fields():
+    from django.core.exceptions import ValidationError
+    from django.utils import timezone
+
+    from apps.projects.models import ProjectMember
+    from apps.projects.services import (
+        ProjectPermissionError,
+        apply_questionnaire_mapping,
+        create_project,
+    )
+
+    executor = get_user_model().objects.create_user(email="map-executor@example.com")
+    customer = get_user_model().objects.create_user(email="map-customer@example.com")
+    project = create_project(
+        actor=executor,
+        data={"name": "Questionnaire mapping access", "project_type": "website"},
+    )
+    project.status = "active"
+    project.save(update_fields=["status", "updated_at"])
+    ProjectMember.objects.create(project=project, user=customer, role="customer")
+
+    with pytest.raises(ProjectPermissionError):
+        apply_questionnaire_mapping(
+            project_id=project.pk,
+            actor=executor,
+            expected_version=1,
+            mapped_changes={"goal": "Executor bypass"},
+        )
+    with pytest.raises(ProjectPermissionError):
+        apply_questionnaire_mapping(
+            project_id=project.pk,
+            actor=customer,
+            expected_version=1,
+            mapped_changes={"goal": "Unverified customer"},
+        )
+    customer.email_verified_at = timezone.now()
+    customer.save(update_fields=["email_verified_at"])
+    with pytest.raises(ValidationError):
+        apply_questionnaire_mapping(
+            project_id=project.pk,
+            actor=customer,
+            expected_version=1,
+            mapped_changes={"status": "completed"},
+        )

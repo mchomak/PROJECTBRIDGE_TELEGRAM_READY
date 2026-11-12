@@ -13,6 +13,16 @@ class QuestionnaireSubmissionStatus(models.TextChoices):
     CORRECTION_REQUESTED = "correction_requested", "Correction requested"
 
 
+class QuestionnaireConflictStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RESOLVED = "resolved", "Resolved"
+
+
+class QuestionnaireConflictDecision(models.TextChoices):
+    KEEP_PASSPORT = "keep_passport", "Keep passport value"
+    APPLY_ANSWER = "apply_answer", "Apply questionnaire answer"
+
+
 class QuestionnaireAnswerOrigin(models.TextChoices):
     PREFILLED = "prefilled", "Prefilled from passport"
     CUSTOMER = "customer", "Provided by customer"
@@ -27,6 +37,7 @@ class QuestionnaireSubmission(models.Model):
     )
     schema_key = models.CharField(max_length=64)
     schema_version = models.PositiveSmallIntegerField()
+    passport_version = models.PositiveIntegerField(default=1)
     status = models.CharField(
         max_length=32,
         choices=QuestionnaireSubmissionStatus.choices,
@@ -107,3 +118,59 @@ class QuestionnaireAnswer(models.Model):
             ),
         ]
         ordering = ("question_key", "id")
+
+
+class QuestionnaireConflict(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    submission = models.ForeignKey(
+        QuestionnaireSubmission,
+        on_delete=models.CASCADE,
+        related_name="conflicts",
+    )
+    answer = models.ForeignKey(
+        QuestionnaireAnswer,
+        on_delete=models.CASCADE,
+        related_name="conflicts",
+    )
+    mapped_field = models.CharField(max_length=255)
+    passport_value = models.JSONField()
+    answer_value = models.JSONField()
+    status = models.CharField(
+        max_length=16,
+        choices=QuestionnaireConflictStatus.choices,
+        default=QuestionnaireConflictStatus.PENDING,
+    )
+    decision = models.CharField(
+        max_length=24,
+        choices=QuestionnaireConflictDecision.choices,
+        blank=True,
+        null=True,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="reviewed_questionnaire_conflicts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status__in=QuestionnaireConflictStatus.values),
+                name="questionnaire_conflict_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(decision__isnull=True)
+                | Q(decision__in=QuestionnaireConflictDecision.values),
+                name="questionnaire_conflict_decision_valid",
+            ),
+            models.UniqueConstraint(
+                fields=("answer",),
+                name="one_questionnaire_conflict_per_answer",
+            ),
+        ]
+        indexes = [models.Index(fields=("submission", "status"))]
+        ordering = ("created_at", "id")

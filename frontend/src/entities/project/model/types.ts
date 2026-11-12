@@ -2,7 +2,7 @@ import type { components } from '../../../shared/api/generated/schema';
 
 export type Project = components['schemas']['ProjectResponse'];
 export type ProjectType = components['schemas']['ProjectTypeEnum'];
-export type ProjectStatus = components['schemas']['ProjectResponseStatusEnum'];
+export type ProjectStatus = components['schemas']['ProjectStatusEnum'];
 export type ProjectMember = components['schemas']['ProjectMemberSummary'];
 export type ProjectPage = components['schemas']['ProjectListResponse'];
 export type ProjectPassport = components['schemas']['ProjectPassportResponse'];

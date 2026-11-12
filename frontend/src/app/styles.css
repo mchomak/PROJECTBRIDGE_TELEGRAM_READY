@@ -698,6 +698,21 @@ textarea {
   margin: 0 0 20px;
 }
 
+.questionnaire-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 0;
+  color: #30434c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.questionnaire-confirmation input {
+  flex: none;
+  margin: 2px 0 0;
+}
+
 .questionnaire-status {
   width: fit-content;
   margin: 0 0 18px;
@@ -748,6 +763,42 @@ textarea {
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.questionnaire-history {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.questionnaire-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e8edef;
+  color: #30434c;
+  font-size: 12px;
+}
+
+.questionnaire-history time {
+  color: var(--muted);
+}
+
+.questionnaire-conflict {
+  display: grid;
+  gap: 16px;
+  padding: 18px 0;
+  border-bottom: 1px solid #e8edef;
+}
+
+.questionnaire-conflict h3 {
+  margin: 0;
+  color: #263943;
+  font-size: 14px;
+  text-transform: capitalize;
 }
 
 .back-link {

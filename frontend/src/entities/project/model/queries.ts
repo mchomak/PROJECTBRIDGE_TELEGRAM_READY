@@ -37,11 +37,11 @@ export function useProjectMembers(projectId: string) {
   });
 }
 
-export function useProjectPassport(projectId: string) {
+export function useProjectPassport(projectId: string, enabled = true) {
   return useQuery({
     queryKey: projectQueryKeys.passport(projectId),
     queryFn: () => getProjectPassport(projectId),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId) && enabled,
     retry: shouldRetry,
     retryDelay: (attempt) => Math.min(200 * 2 ** attempt, 1000),
   });

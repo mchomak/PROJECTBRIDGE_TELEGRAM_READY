@@ -213,6 +213,7 @@ Fields:
 - `project_id` — FK Project
 - `schema_key`
 - `schema_version`
+- `passport_version` — passport concurrency token captured when the draft starts
 - `status` — `draft`, `submitted`, or `correction_requested`
 - `started_by_id` — FK User
 - `submitted_by_id` — nullable FK User
@@ -246,6 +247,36 @@ Prefilled answers use `origin=prefilled` and `is_confirmed=false`.
 Editing an answer changes its origin to `customer`. Saving a draft writes
 answers only to `QuestionnaireAnswer`; it does not mutate
 `ProjectPassport`. Inactive-branch answers are removed or rejected.
+Submitting a complete draft requires an explicit customer confirmation if
+any prefilled answer is still unconfirmed. A successful submission locks
+the answer rows and records the submitting actor and time. If the passport
+version no longer matches `passport_version`, the transaction rolls back
+and the draft stays editable.
+
+### `QuestionnaireConflict`
+
+Fields:
+
+- `id`
+- `submission_id` — FK QuestionnaireSubmission
+- `answer_id` — FK QuestionnaireAnswer
+- `mapped_field` — explicit passport path, such as `goal` or
+  `functional_scope.website`
+- `passport_value` — immutable JSON snapshot at submission
+- `answer_value` — immutable JSON snapshot from the submitted answer
+- `status` — `pending` or `resolved`
+- `decision` — nullable `keep_passport` or `apply_answer`
+- `reviewed_by_id` — nullable executor FK User
+- `created_at`
+- `resolved_at`, nullable
+
+Constraint: one conflict per answer. Pending conflicts are visible only to
+active project executors. Resolution checks the current passport version
+and the affected field against the stored passport snapshot. `keep_passport`
+does not write the passport; `apply_answer` writes the stored answer value
+through `projects.services.update_passport`. Audit metadata contains the
+actor, mapped field names, decision, and version transition, never answer
+or passport contents. AI cannot resolve these deterministic conflicts.
 
 ### Version 1 schema and validation decisions
 
@@ -271,19 +302,35 @@ Type-specific branches are deterministic: `website` requires
 `event_source`; `other` requires `project_area`. The backend rejects
 unknown answers, invalid values, and answers for inactive branches.
 
-The approved mappings are: `goal`, `target_audience`,
-`expected_result`, `deadline`, `budget_min`, `budget_max`, and `currency`
-map to same-named passport fields. `functional_scope`, `integrations`,
-and `constraints` map under the project-type key in their same-named JSON
-passport fields. Integrations use `{enabled, items}`. Answers specific
-to a project type and `schema_version` are retained under
-`additional_data.questionnaire[project_type]`; `has_integrations` and
-`has_existing_*` control answers are not mapped. Empty optional answers
-do not clear passport values. Submission applies these mappings in the
-owning projects service; differing existing values are preserved as
-questionnaire conflicts for executor review and never silently replace
-the passport. The conflict queue is executor-only and is not shared
-Project State.
+The approved mappings are:
+
+| Questionnaire answer | Passport path | Empty/equal/different value behavior |
+|:--|:--|:--|
+| `goal` | `goal` | Empty is skipped; equal is a no-op; a different existing value becomes a conflict. |
+| `target_audience` | `target_audience` | Empty is skipped; equal is a no-op; a different existing value becomes a conflict. |
+| `expected_result` | `expected_result` | Empty is skipped; equal is a no-op; a different existing value becomes a conflict. |
+| `deadline` | `deadline` | Empty is skipped; dates are stored as dates; equal is a no-op; a different existing date becomes a conflict. |
+| `budget_min` | `budget_min` | Empty is skipped; decimals are stored as decimals; equal is a no-op; a different existing amount becomes a conflict. |
+| `budget_max` | `budget_max` | Empty is skipped; decimals are stored as decimals; equal is a no-op; a different existing amount becomes a conflict. |
+| `currency` | `currency` | Empty is skipped; equal is a no-op; a different existing currency becomes a conflict. |
+| `functional_scope` | `functional_scope[project_type]` | Empty is skipped; equal is a no-op; a different existing value becomes a conflict. |
+| `constraints` | `constraints[project_type]` | Empty is skipped; equal is a no-op; a different existing value becomes a conflict. |
+| `has_integrations` plus `integrations` | `integrations[project_type] = {enabled, items}` | An explicit disabled answer stores `{enabled: false, items: []}`; equal is a no-op; a different existing object becomes a conflict. |
+| Type-specific non-control answers | `additional_data.questionnaire[project_type].answers[key]` | Non-empty answers are retained under their question key; empty answers are skipped. |
+| Schema version | `additional_data.questionnaire[project_type].schema_version` | The submitted immutable schema version is stored with the type-specific answers. |
+| `has_existing_site`, `has_existing_bot` | — | Branch control answers are not mapped. |
+
+An empty passport path is populated, an equal non-empty value is left
+unchanged, and a different non-empty value creates a
+`QuestionnaireConflict`. Empty optional answers never clear passport data.
+The questionnaire service submits the complete versioned change set to
+`projects.services.apply_questionnaire_mapping(project_id, actor,
+expected_version, mapped_changes)`. That projects-owned service locks and
+updates the passport and its audit row atomically. Questionnaire code
+never writes `ProjectPassport` directly. The submission, answer
+confirmation, conflict snapshots, and passport mapping share one
+transaction; stale passport versions roll back all of them. Conflicts
+remain executor-only and are not shared Project State.
 
 ## 6. Chat
 
