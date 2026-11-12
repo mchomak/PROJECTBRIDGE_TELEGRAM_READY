@@ -61,15 +61,15 @@ conflicting interpretations.
 
 ### 2.2 Retention and deletion grace period
 
-The technical documents contain a 30-day cancellation window for
-permanent deletion, 12-month retention for completed projects, and
-14-day backup retention. These are implementation baselines in the
-documents, but they were not separately confirmed in the product
-discussion.
+The 12-month completed-project retention and 14-day backup retention
+periods are not approved product requirements. Completed and archived
+projects are not automatically deleted; no project-data retention
+deadline is defined. The 30-day document-deletion cancellation window
+and a fixed operational backup-retention schedule remain unconfirmed.
 
-**Action before implementing scheduled deletion/retention:** confirm
-these periods or update the documents. Do not hard-code unconfirmed
-policy values.
+**Action before implementing scheduled document deletion or backup
+expiry:** confirm the document-deletion grace period and operational
+backup schedule. Do not hard-code unconfirmed policy values.
 
 ### 2.3 Questionnaire rules
 

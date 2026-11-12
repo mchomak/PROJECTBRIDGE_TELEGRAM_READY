@@ -136,13 +136,14 @@ consent. Do not retain the deleted content in the audit log.
 
 ## 9. Backup behavior
 
-Encrypted backups use a 14-day rolling retention period. A file removed
-from live storage may remain in an existing backup until that backup
-expires.
+Encrypted backups retain deleted files until the applicable operational
+backup expires. A 14-day rolling period was previously proposed but is
+not approved; do not present it as a product promise or implement a fixed
+expiry from that proposal.
 
 The system must not claim that a document is immediately erased from
-every backup copy. The user-facing retention policy must explain the
-backup expiry window.
+every backup copy. A fixed backup expiry window can be communicated only
+after an operational retention schedule is approved.
 
 ## 10. Required safeguards
 

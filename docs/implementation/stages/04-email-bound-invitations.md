@@ -28,6 +28,12 @@ Stages 02 and 03.
   email.
 - Enforce one active customer membership per project.
 - Make acceptance atomic and safe against duplicate submissions.
+- When a customer accepts an invitation for a `draft` project, atomically
+  add the customer membership and transition the project to `active`.
+  Acceptance is limited to `draft` and `active` projects; completed and
+  archived projects do not accept invitations.
+- Create and revoke invitations only while the project is `draft` or
+  `active`.
 - Send invitation emails through the configured email backend; local
   development uses console email.
 - Rate-limit public invitation preview/acceptance endpoints.
@@ -69,6 +75,13 @@ Stages 02 and 03.
 - [ ] Raw invitation tokens are not stored in the database or logs.
 - [ ] Repeated acceptance does not create duplicate memberships.
 - [ ] A project cannot acquire a second active customer.
+- [ ] Accepting an invitation for a `draft` project changes its status to
+  `active` in the same transaction as customer membership creation.
+- [ ] Accepting an invitation for an `active` project leaves its status
+  `active`; invitations for `completed` or `archived` projects cannot be
+  accepted.
+- [ ] Invitations cannot be created or revoked for `completed` or
+  `archived` projects.
 - [ ] Invitation endpoints do not leak project information for invalid
   tokens.
 - [ ] Local invitation delivery is testable through the console email

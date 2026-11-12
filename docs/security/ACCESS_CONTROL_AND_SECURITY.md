@@ -46,6 +46,25 @@ Both participants must consent to document archiving and permanent
 deletion. The initiating participant’s request records their approval;
 the other participant must approve separately.
 
+### Project status overrides
+
+The role matrix above applies subject to these project lifecycle rules.
+Memberships remain active through completion and project archival, so
+both participants retain read access to existing project data.
+
+| Project status | Access and allowed changes |
+|:---------------|:--------------------------|
+| `draft` | The executor is the only active member until invitation acceptance and can edit project metadata and passport. A valid customer invitation acceptance moves the project to `active`. |
+| `active` | The role matrix applies. |
+| `completed` | Both participants can read project data, including the passport, chat history, documents, and Project State. Passport/project edits, new chat messages, document mutations/uploads, Project State changes, and new questionnaire answers are blocked. The executor may reopen to `active` or archive. |
+| `archived` | The project is omitted from the main project list and appears in the separate archive list. Both participants can read existing data; all data mutations are blocked except executor restoration to `status_before_archive`. |
+
+Only the executor can directly request a project status transition. The
+`draft`-to-`active` change is performed by the invitation service after
+the invited customer accepts; clients cannot set `status` through a
+project metadata update. Archiving preserves project records, active
+memberships, and documents. It is not deletion.
+
 ## 3. Shared information
 
 All documents are shared. There is no private-document feature or
@@ -166,22 +185,22 @@ functionality must not be added as part of document upload.
 
 ## 10. Data retention baseline
 
-Baseline policy selected for the MVP:
-
-- Active project data is retained while the project is active.
-- A completed project becomes read-only and is retained for 12 months.
-- Before the retention period ends, notify both participants and request
-  a retention decision.
-- Do not automatically destroy project data without a defined and
-  communicated policy.
+- Completed and archived projects, including their documents, are not
+  automatically deleted in the MVP. Project archival is reversible and
+  does not delete data.
+- The previously proposed 12-month project-retention and 14-day backup
+  periods are not approved product requirements. They must not trigger
+  project deletion or be presented as user-facing retention promises.
+- No automatic project-data purge is implemented. Any future project
+  retention period or backup-expiration schedule requires a separate
+  documented decision.
 - Operational AI logs should retain metadata rather than full prompts or
   source contents; the exact retention period must be finalized.
-- Create encrypted daily backups with a 14-day rolling retention period.
 - Test database and file restoration periodically.
 
-When a document is permanently deleted from live storage, copies may
-remain in encrypted backups until those backups expire. This limitation
-must be reflected in the final user-facing retention policy.
+For mutually approved permanent document deletion, communicate the
+backup-retention behavior once an operational backup schedule is
+approved.
 
 ## 11. Deferred production requirements
 

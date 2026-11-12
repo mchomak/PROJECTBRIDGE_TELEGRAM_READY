@@ -4,9 +4,10 @@
 architecture discussion.  
 **Last updated:** 2026-11-11
 
-The items below must be resolved before the corresponding implementation
-is considered complete. They are not permission to invent product
-behavior silently.
+Items not marked resolved must be resolved before the corresponding
+implementation is considered complete. Resolved entries remain here as
+decision history; they are not permission to invent product behavior
+silently.
 
 ## Product and workflow
 
@@ -16,12 +17,22 @@ behavior silently.
 2.  **Questionnaire schemas:** Define the exact questions, branching
     rules, required fields, and schema versions for all four project
     types.
-3.  **Passport mapping:** Define the exact mapping from each
-    questionnaire answer to passport fields, including conflict
-    detection rules and which value remains authoritative until executor
-    review.
-4.  **Project lifecycle:** Define whether completed or archived projects
-    can be reopened and which operations remain available.
+3.  **Passport mapping (Stage 05):** Stage 03 uses exactly the proposed
+    field names and types in `database/DATA_MODEL.md`. Exact answer-to-field
+    mappings, questionnaire requiredness, conflict detection, and which
+    value remains authoritative until executor review remain open before
+    Stage 05.
+4.  **Project lifecycle — resolved for the MVP on 2026-11-11:** New
+    projects start as `draft`; accepting a customer invitation moves a
+    draft project to `active`. The executor may move `active` to
+    `completed`, reopen `completed` to `active`, archive `draft`, `active`,
+    or `completed`, and restore `archived` to its saved prior status.
+    `status_before_archive` is saved only while archived and cleared on
+    restore. Completed projects are read-only except for executor reopen
+    and archive actions. Archived projects are read-only except for
+    executor restore, are listed separately, and are not deleted.
+    See `product/MVP_SCOPE.md`, `database/DATA_MODEL.md`,
+    `api/API_CONTRACT.md`, and `security/ACCESS_CONTROL_AND_SECURITY.md`.
 5.  **Project State statuses:** Finalize status choices and allowed
     transitions for stages, requirements, tasks, open questions, and
     conflicts.
@@ -91,8 +102,11 @@ behavior silently.
     required before production.
 31. **Operational log retention:** Set an exact retention period for
     non-content AI and application logs.
-32. **Closed-project retention:** Define the notification and decision
-    process before the proposed 12-month retention period expires.
+32. **Closed-project retention — resolved for the MVP on 2026-11-11:**
+    Completed and archived projects are not automatically deleted. The
+    previously proposed 12-month project-retention and 14-day backup
+    periods are not approved product requirements. A future product
+    retention policy and operational backup schedule remain undecided.
 33. **Backup restoration:** Define recovery objectives and schedule
     restore tests.
 34. **Production secret manager:** Select the deployment platform and

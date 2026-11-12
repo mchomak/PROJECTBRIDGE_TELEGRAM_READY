@@ -122,18 +122,47 @@ groups and final review.
 
 | Method | Endpoint                                  | Permission                    | Purpose                                |
 |:-------|:------------------------------------------|:------------------------------|:---------------------------------------|
-| GET    | `/api/v1/projects/`                       | Authenticated                 | List projects where user is a member   |
-| POST   | `/api/v1/projects/`                       | Authenticated, verified email | Create project and executor membership |
+| GET    | `/api/v1/projects/`                       | Authenticated                 | List member projects except archived projects |
+| GET    | `/api/v1/projects/?status=archived`        | Authenticated                 | List archived member projects          |
+| POST   | `/api/v1/projects/`                       | Authenticated, verified email | Create a `draft` project, executor membership, and passport |
 | GET    | `/api/v1/projects/{project_id}/`          | Project member                | Read project                           |
 | PATCH  | `/api/v1/projects/{project_id}/`          | Executor                      | Update project metadata                |
 | GET    | `/api/v1/projects/{project_id}/members/`  | Project member                | List participants                      |
 | POST   | `/api/v1/projects/{project_id}/complete/` | Executor                      | Complete project                       |
+| POST   | `/api/v1/projects/{project_id}/reopen/`   | Executor                      | Reopen a completed project             |
 | POST   | `/api/v1/projects/{project_id}/archive/`  | Executor                      | Archive project                        |
+| POST   | `/api/v1/projects/{project_id}/restore/`  | Executor                      | Restore an archived project            |
 | GET    | `/api/v1/projects/{project_id}/passport/` | Project member                | Read passport                          |
 | PATCH  | `/api/v1/projects/{project_id}/passport/` | Executor                      | Update passport                        |
 
 Project creation is atomic: create Project, executor ProjectMember, and
 ProjectPassport in one database transaction.
+
+The project lifecycle is:
+
+- Creation sets `status=draft`.
+- Accepting a valid customer invitation moves `draft` to `active` in the
+  invitation-acceptance transaction. A customer cannot submit a status
+  value directly.
+- `complete/` accepts only `active` and moves it to `completed`.
+- `reopen/` accepts only `completed` and moves it to `active`.
+- `archive/` accepts `draft`, `active`, or `completed`; it saves the
+  previous value in `status_before_archive` and moves the project to
+  `archived`.
+- `restore/` accepts only `archived`, restores `status_before_archive`,
+  and clears that field.
+- Invalid lifecycle transitions return `409 Conflict`. Only the
+  executor may call the lifecycle action endpoints.
+
+The default project list excludes archived projects. The
+`?status=archived` filter supplies the separate archive list. Active
+members may read projects, members, and passports in every status.
+Metadata and passport updates are allowed only in `draft` and `active`.
+`completed` projects are read-only except for executor reopen/archive
+actions. `archived` projects are read-only except for executor restore.
+Neither transition deletes the project or its documents.
+`status_before_archive` is server-managed, is not accepted in client
+payloads, and is not exposed as an editable API field.
 
 ## 7. Invitations — `invitations`
 
@@ -148,6 +177,9 @@ ProjectPassport in one database transaction.
 The invitation is bound to a normalized email address. The authenticated
 user’s verified email must match it. The raw token is returned only when
 created; only its hash is stored.
+Invitations may be created and accepted only while a project is `draft`
+or `active`. Accepting an invitation for a `draft` project atomically
+adds the customer membership and moves the project to `active`.
 
 ## 8. Questionnaire — `questionnaire`
 

@@ -40,6 +40,15 @@ different roles in different projects.
 ### 3.2 Project setup
 
 - Create, view, edit, complete, and archive projects.
+- New projects start as `draft`; accepting a customer invitation moves a
+  draft project to `active`.
+- The executor can complete an active project, reopen a completed
+  project, archive a draft/active/completed project, and restore an
+  archived project to its previous status.
+- Completed and archived projects remain readable by both participants.
+  Archived projects are shown separately from the main project list.
+- Archiving preserves the project and its documents; completed and
+  archived project data is not automatically deleted.
 - Support four initial project types:
   - `website`
   - `telegram_bot`
@@ -143,6 +152,12 @@ specification comments are deferred.
 10. Consent and disclosure flows for external AI processing are deferred
     from the MVP implementation, but must be reviewed before public
     production use.
+11. Completed and archived projects are read-only, subject to the
+    executor-only reopen, archive, and restore transitions in the
+    lifecycle contract.
+12. The MVP does not automatically delete completed or archived
+    projects. The previously proposed 12-month project-retention and
+    14-day backup periods are not approved product requirements.
 
 ## 5. Explicitly deferred
 

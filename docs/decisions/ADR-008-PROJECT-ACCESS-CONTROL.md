@@ -17,6 +17,14 @@ unreviewed AI proposals.
 - Both participants can read and upload all project documents.
 - AI analysis runs and AI proposals are executor-only.
 - The customer contributes through chat and questionnaire responses.
+- Project lifecycle access follows the status rules in
+  `docs/security/ACCESS_CONTROL_AND_SECURITY.md`: `completed` and
+  `archived` are read-only for both participants, with executor-only
+  reopen/archive/restore actions as permitted by the current status.
+- Project archival preserves active memberships and data. The previous
+  status is stored and restored; archival is not deletion.
+- Accepting a customer invitation moves a `draft` project to `active`
+  through the invitation service. Clients cannot directly set status.
 
 ## Consequences
 
@@ -24,3 +32,5 @@ unreviewed AI proposals.
 - Customer-facing Project State responses exclude AI internals.
 - Frontend visibility rules are not considered security controls.
 - Project membership is checked for REST and WebSocket access.
+- Lifecycle state restrictions are enforced by backend services and
+  permissions, not by frontend visibility alone.

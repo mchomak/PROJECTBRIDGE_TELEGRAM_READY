@@ -90,10 +90,33 @@ Fields:
 - `project_type` — choice: `website`, `telegram_bot`, `automation`,
   `other`
 - `status` — choice: `draft`, `active`, `completed`, `archived`
+- `status_before_archive` — nullable choice: `draft`, `active`,
+  `completed`; populated only while the project is archived
 - `created_by_id` — FK to User
 - `created_at`, `updated_at`
 - `completed_at`, nullable
 - `archived_at`, nullable
+
+Lifecycle transitions:
+
+| From | To | Actor or trigger |
+|:-----|:---|:-----------------|
+| New project | `draft` | Project creation |
+| `draft` | `active` | Successful customer invitation acceptance; the invitation service applies this transition |
+| `active` | `completed` | Executor completes the project |
+| `completed` | `active` | Executor reopens the project |
+| `draft`, `active`, `completed` | `archived` | Executor archives the project; save the current status in `status_before_archive` |
+| `archived` | `status_before_archive` | Executor restores the project; clear `status_before_archive` |
+
+Only executor actions can directly change project status. The
+`draft`-to-`active` transition is a system-side effect of a valid
+customer invitation acceptance, not a client-supplied status update.
+Require `status_before_archive` while `status` is `archived`, and require
+it to be null for every other status. Project status changes do not
+revoke memberships or delete project data. Archive is reversible state,
+not deletion.
+Set `completed_at` when a project is completed. Set `archived_at` when it
+is archived and clear `archived_at` when it is restored.
 
 ### `ProjectMember`
 
@@ -132,9 +155,12 @@ Proposed fields:
 - `version` — integer for optimistic concurrency
 - `created_at`, `updated_at`
 
-Use ordinary columns for stable, frequently queried fields. Use JSONB
-for type-specific or evolving attributes. Exact field mapping and
-requiredness must be finalized with the questionnaire schemas.
+The field names and types above are the approved Stage 03 passport
+schema. Do not add or remove business fields. Use ordinary columns for
+stable, frequently queried fields and JSONB for type-specific or evolving
+attributes. Questionnaire answer mapping and questionnaire requiredness
+remain Stage 05 decisions; Stage 03 must not infer them from the field
+types.
 
 ## 4. Invitations
 
