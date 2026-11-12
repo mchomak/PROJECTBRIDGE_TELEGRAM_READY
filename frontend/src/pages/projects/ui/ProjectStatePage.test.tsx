@@ -223,6 +223,8 @@ test('customer reads shared Project State without create or edit controls', asyn
   renderPage(fetchMock, customer);
 
   expect(await screen.findByRole('heading', { name: 'Discovery' })).toBeTruthy();
+  expect(screen.getByText('planned')).toBeTruthy();
+  expect(screen.getByText(/Due 2026-12-01/)).toBeTruthy();
   expect(screen.getByText('The executor has not added any requirements yet.')).toBeTruthy();
   expect(screen.queryByText('Add stage')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Edit stage' })).toBeNull();
@@ -230,6 +232,45 @@ test('customer reads shared Project State without create or edit controls', asyn
     expect.stringContaining('/evidence-options/'),
     expect.anything(),
   );
+});
+
+test('customer sees a clear empty state when no shared state has been added', async () => {
+  const fetchMock = stateFetch(customerId, { stages: [], conflicts: [] });
+  renderPage(fetchMock, customer);
+
+  expect(await screen.findByText('The executor has not added any stages yet.')).toBeTruthy();
+  expect(screen.queryByText(/percentage|gantt/i)).toBeNull();
+  expect(screen.queryByText('Add the first stages to the shared project plan.')).toBeNull();
+});
+
+test('customer can retry after a Project State load error', async () => {
+  const stateUrl = `/api/v1/projects/${projectId}/state/`;
+  const fallbackFetch = stateFetch(customerId);
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === stateUrl) {
+      return Promise.resolve(
+        jsonResponse({ code: 'server_error', detail: 'Try again later.' }, 500),
+      );
+    }
+    return fallbackFetch(input, init);
+  });
+  renderPage(fetchMock, customer);
+
+  expect(
+    await screen.findByRole('heading', { name: 'We couldn’t load Project State' }),
+  ).toBeTruthy();
+  expect(screen.getByText('Try again later.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.filter(([url]) => String(url) === stateUrl).length).toBeGreaterThan(
+      1,
+    );
+  });
+  expect(
+    await screen.findByRole('heading', { name: 'We couldn’t load Project State' }),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
 });
 
 test('executor can edit terminal stage content without a status control', async () => {

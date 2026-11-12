@@ -2,6 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
+from apps.common.models import ProjectAuditLog
 from apps.project_state.models import ProjectStage
 from apps.projects.models import Project, ProjectMember
 from apps.projects.services import create_project
@@ -85,6 +86,11 @@ def test_members_read_shared_state_but_only_executor_can_create_or_edit(
         {"name": "Customer edit"},
         format="json",
     )
+    customer_patch = customer_client.patch(
+        f"/api/v1/stages/{created.data['id']}/",
+        {"name": "Customer edit"},
+        format="json",
+    )
     outsider_list = outsider_client.get(collection_url)
     cross_project_patch = outsider_client.patch(
         f"/api/v1/stages/{created.data['id']}/",
@@ -100,6 +106,7 @@ def test_members_read_shared_state_but_only_executor_can_create_or_edit(
     assert customer_list.data["results"][0]["name"] == "Discovery"
     assert customer_list.data["results"][0]["due_date"] == "2026-12-01"
     assert customer_create.status_code == 403
+    assert customer_patch.status_code == 403
     assert outsider_list.status_code == 404
     assert cross_project_patch.status_code == 404
     assert other_project_read.status_code == 200
@@ -125,6 +132,120 @@ def test_state_aggregate_has_scoped_collection_links_and_no_progress_percentage(
         f"/api/v1/projects/{project.pk}/stages/"
     )
     assert not any("percent" in key.lower() for key in aggregate.data)
+
+
+@pytest.mark.django_db
+def test_both_members_read_every_shared_collection_and_conflict_history(
+    project_context,
+):
+    project, executor, customer, outsider, other_project = project_context
+    executor_client = _client(executor)
+    stage = executor_client.post(
+        f"/api/v1/projects/{project.pk}/stages/",
+        {"name": "Planning", "due_date": "2026-12-01"},
+        format="json",
+    )
+    requirement = executor_client.post(
+        f"/api/v1/projects/{project.pk}/requirements/",
+        {"title": "Confirm the delivery scope"},
+        format="json",
+    )
+    task = executor_client.post(
+        f"/api/v1/projects/{project.pk}/tasks/",
+        {
+            "title": "Prepare the first build",
+            "stage_id": stage.data["id"],
+            "due_date": "2026-12-02",
+        },
+        format="json",
+    )
+    question = executor_client.post(
+        f"/api/v1/projects/{project.pk}/open-questions/",
+        {"question": "Which launch region should be used?"},
+        format="json",
+    )
+    conflict = executor_client.post(
+        f"/api/v1/projects/{project.pk}/conflicts/",
+        {
+            "title": "Different launch goals",
+            "evidence_refs": _evidence_refs(project, executor),
+        },
+        format="json",
+    )
+    resolution = "Use the goal confirmed in the review."
+    resolved = executor_client.patch(
+        f"/api/v1/conflicts/{conflict.data['id']}/",
+        {"status": "resolved", "resolution": resolution},
+        format="json",
+    )
+    expected_counts = {
+        "stages": 1,
+        "requirements": 1,
+        "tasks": 1,
+        "open_questions": 1,
+        "conflicts": 1,
+    }
+    collection_records = {
+        "stages": stage.data,
+        "requirements": requirement.data,
+        "tasks": task.data,
+        "open_questions": question.data,
+        "conflicts": conflict.data,
+    }
+
+    assert all(
+        response.status_code == 201
+        for response in (stage, requirement, task, question, conflict)
+    )
+    assert resolved.status_code == 200
+    assert resolved.data["resolved_by_id"] == str(executor.pk)
+    assert resolved.data["resolved_at"] is not None
+    audit = ProjectAuditLog.objects.get(
+        project=project,
+        action="project_state.conflict_updated",
+        target_id=conflict.data["id"],
+    )
+    assert audit.actor_id == executor.pk
+    assert audit.metadata == {
+        "changed_fields": ["resolution", "status"],
+        "from_status": "unresolved",
+        "to_status": "resolved",
+    }
+
+    for member in (executor, customer):
+        client = _client(member)
+        aggregate = client.get(f"/api/v1/projects/{project.pk}/state/")
+        assert aggregate.status_code == 200
+        assert aggregate.data["counts"] == expected_counts
+        assert set(aggregate.data) == {"project_id", "counts", "collections"}
+        assert not any("percent" in key.lower() for key in aggregate.data)
+
+        for collection, created_record in collection_records.items():
+            response = client.get(
+                f"/api/v1/projects/{project.pk}/{collection.replace('_', '-')}/"
+            )
+            assert response.status_code == 200
+            assert response.data["count"] == 1
+            record = response.data["results"][0]
+            assert record["id"] == created_record["id"]
+            assert record["project_id"] == str(project.pk)
+            assert all("analysis" not in key.lower() for key in record)
+            assert all("proposal" not in key.lower() for key in record)
+            if collection == "conflicts":
+                assert record["status"] == "resolved"
+                assert record["resolution"] == resolution
+                assert record["resolved_by_id"] == str(executor.pk)
+                assert record["resolved_at"] == resolved.data["resolved_at"]
+                assert len(record["evidence"]) == 2
+
+    assert (
+        _client(outsider).get(f"/api/v1/projects/{project.pk}/state/").status_code
+        == 404
+    )
+    assert (
+        _client(customer).get(f"/api/v1/projects/{other_project.pk}/state/").status_code
+        == 404
+    )
 
 
 @pytest.mark.django_db

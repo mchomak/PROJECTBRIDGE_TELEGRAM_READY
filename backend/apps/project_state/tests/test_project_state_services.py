@@ -533,9 +533,51 @@ def test_evidence_and_conflict_link_constraints_enforce_immutable_sources(
         evidence.save()
     with pytest.raises(ValidationError):
         evidence.delete()
-    with pytest.raises(IntegrityError):
+    with pytest.raises(ValidationError):
+        Evidence.objects.filter(pk=evidence.pk).update(excerpt="edited evidence")
+    with pytest.raises(ValidationError):
+        Evidence.objects.filter(pk=evidence.pk).delete()
+    with pytest.raises(ValidationError):
+        Evidence.objects.bulk_update([evidence], ["excerpt"])
+
+    link = conflict.evidence_links.first()
+    other_evidence = conflict.evidence.exclude(pk=link.evidence_id).first()
+    link.evidence_id = other_evidence.pk
+    with pytest.raises(ValidationError):
+        link.save()
+    with pytest.raises(ValidationError):
+        link.delete()
+    with pytest.raises(ValidationError):
+        ProjectConflictEvidence.objects.filter(pk=link.pk).update(
+            evidence_id=other_evidence.pk
+        )
+    with pytest.raises(ValidationError):
+        ProjectConflictEvidence.objects.filter(pk=link.pk).delete()
+    with pytest.raises(ValidationError):
+        ProjectConflictEvidence.objects.bulk_update([link], ["evidence"])
+    with pytest.raises(ValidationError):
         with transaction.atomic():
-            ProjectConflictEvidence.objects.create(conflict=conflict, evidence=evidence)
+            conflict.evidence.remove(link.evidence_id)
+    assert not transaction.get_rollback()
+    with pytest.raises(ValidationError):
+        with transaction.atomic():
+            conflict.evidence.clear()
+    assert not transaction.get_rollback()
+    second_conflict = create_project_conflict(
+        project_id=project.pk,
+        actor=executor,
+        data={
+            "title": "Another conflict",
+            "evidence_refs": _evidence_refs(project, executor),
+        },
+    )
+    with pytest.raises(ValidationError):
+        with transaction.atomic():
+            conflict.evidence.add(second_conflict.evidence.first())
+    assert not transaction.get_rollback()
+
+    with pytest.raises(ValidationError):
+        ProjectConflictEvidence.objects.create(conflict=conflict, evidence=evidence)
     with pytest.raises(IntegrityError):
         with transaction.atomic():
             Evidence.objects.create(
@@ -544,3 +586,33 @@ def test_evidence_and_conflict_link_constraints_enforce_immutable_sources(
                 source_id=uuid4(),
                 excerpt="",
             )
+
+
+@pytest.mark.django_db
+def test_evidence_positional_bulk_create_upsert_cannot_mutate_snapshot(
+    project_context,
+):
+    project, executor, _, _, _ = project_context
+    conflict = create_project_conflict(
+        project_id=project.pk,
+        actor=executor,
+        data={"title": "Conflict", "evidence_refs": _evidence_refs(project, executor)},
+    )
+    evidence = conflict.evidence.first()
+    original_excerpt = evidence.excerpt
+    replacement = Evidence(
+        id=evidence.pk,
+        project=project,
+        source_type=evidence.source_type,
+        source_id=evidence.source_id,
+        excerpt="Changed through positional upsert",
+        metadata=evidence.metadata,
+    )
+
+    with pytest.raises(ValidationError):
+        Evidence.objects.bulk_create(
+            [replacement], None, False, True, ["excerpt"], ["id"]
+        )
+
+    evidence.refresh_from_db()
+    assert evidence.excerpt == original_excerpt
