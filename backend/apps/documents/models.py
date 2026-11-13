@@ -67,6 +67,7 @@ class Document(models.Model):
         choices=DocumentProcessingStatus.choices,
         default=DocumentProcessingStatus.QUEUED,
     )
+    processing_generation = models.PositiveIntegerField(default=0, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     archived_at = models.DateTimeField(blank=True, null=True)
     deleted_at = models.DateTimeField(blank=True, null=True)

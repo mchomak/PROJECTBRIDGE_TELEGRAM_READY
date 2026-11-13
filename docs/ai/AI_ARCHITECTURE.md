@@ -1,6 +1,6 @@
 # ProjectBridge AI Architecture
 
-**Status:** Core design agreed; non-embedding provider/model selection remains open
+**Status:** Router and initial OpenAI model profiles implemented for the local MVP
 **Last updated:** 2026-11-13
 
 ## 1. Requirements
@@ -78,9 +78,57 @@ A profile contains:
 Provider credentials are not stored in the database. They are read from
 environment configuration or a production secret manager.
 
-Fallback profiles must support the same required capability and
-compatible input/output semantics. Do not silently fall back to an
-unrelated model.
+The initial local profiles use OpenAI. `message_analysis` uses
+`gpt-6-luna` with `gpt-6.1-sol` as a compatible fallback;
+`conversation_analysis`, `contradiction_detection`, and
+`specification_generation` use `gpt-6.1-sol` with `gpt-6-luna` as a
+fallback. `document_embedding` uses `text-embedding-3-small` at 1536
+dimensions. `rag_reranking` uses a strict structured-scoring adapter on
+`gpt-6.1-sol`, with `gpt-6-luna` as fallback. The adapter returns one
+validated score for every candidate; the router orders candidates by
+score and rejects missing, duplicate, out-of-range, or non-finite results.
+Profiles and their compatible fallbacks can be changed by backend staff
+in Django Admin.
+
+The adapter uses the official OpenAI Python SDK and Responses API. A
+missing key, denied model, malformed response, or provider outage is
+returned as a stable error code. The SDK's internal retries are disabled;
+the router makes one bounded retry for transient rate-limit, timeout,
+connection, or server errors, then tries only a capability-compatible
+fallback. Authentication, permission, invalid-request, and missing-model
+errors do not trigger fallback.
+
+Default task budgets are editable profile parameters: at most USD 1.00
+reserved per task per UTC day, USD 0.25 per generation/reranking request,
+and USD 0.10 per embedding request. Each profile also caps input bytes,
+candidate count, output tokens, and provider timeout. A PostgreSQL
+transaction-scoped advisory lock serializes reservations across every
+profile for the same task. The router reserves the estimated maximum
+before each primary, retry, or fallback provider call and accumulates all
+attempt reservations against the request and task-day ceilings. The
+request/day ceilings are snapshotted from the primary profile for the call
+chain; a fallback may lower the request ceiling but cannot raise either
+limit. `reserved_cost` is never reduced when a later call succeeds or
+fails. `estimated_cost` stays at least as high as that cumulative
+reservation. If returned usage exceeds its attempt reservation, the known
+excess is added to the daily total under the same lock. Rates are
+configuration snapshots, not a quote or a hard limit on charges incurred
+outside this application.
+
+Callers supply a prompt version label. The router stores that label, a
+SHA-256 input hash, provider/model/profile version, status, timing, token
+usage, attempt count, and estimated cost; it does not persist prompts or
+source text. Profiles and run metadata are staff-only in Django Admin.
+
+Fallback profiles must serve the same task and required capability. Text
+generation profiles share the same typed request/response contract.
+Embedding fallback additionally requires the same provider, model,
+dimensions, and embedding-space version. `EmbeddingBatch.profile_key` is a
+stable hash of provider, exact model identifier, and dimensions; its
+`profile_version` is the separate `embedding_space_version`. Routing
+changes such as timeout, cost rates, or fallback selection only increment
+`config_version` and do not hide vectors. Do not silently fall back to a
+different model, even if it has the same dimension.
 
 ## 5. RAG pipeline
 
@@ -103,27 +151,45 @@ characters of overlap. PDF chunks stay within a page and record the page
 number; DOCX chunks stay within a paragraph and record its index; TXT and
 Markdown chunks record character offsets. Retrieval uses cosine distance
 and returns the five nearest chunks by default, with an explicit
-project-member scope and active-document filter. There is no similarity
-cutoff or reranking in the MVP. A result is available only when the
-embedding service returns vectors from the same active profile, version,
-and model as the indexed chunks. Persisted profile versions keep
-retrieval from combining different profile revisions.
+project-member scope and active-document filter. The reranking capability
+is configurable, but retrieval does not invoke it automatically in Stage
+09. A result is available only when the query embedding has the same
+embedding-space key, embedding-space version, and returned model name as
+the indexed chunks. Cost/timeout profile revisions do not change that
+tuple, and different models never share it.
 
 ### Embedding compatibility
 
 Vectors from different embedding models or incompatible dimensions must
-not be mixed in the same active search index. The initial pgvector column
-is fixed at 1536 dimensions and has a cosine HNSW index. A same-dimension
-model change creates a new profile/model slice, re-embeds all eligible
-documents, and switches retrieval to that slice only after it is
-complete. A dimension change requires a shadow vector column or table,
-backfill and verification before switching; it must not truncate or
-reinterpret existing vectors. Retain the previous index until the new
-slice is ready for the MVP's controlled local rollout.
+not be mixed in one search operation. The embedding-space key is derived
+from provider, exact model identifier, and dimensions. Bump
+`embedding_space_version` when the provider changes the vector space
+behind a stable identifier or when vector-affecting settings change.
+Ordinary routing configuration edits do not affect this version.
 
-Changing the embedding profile requires re-embedding documents and a
-controlled index migration/rebuild. Keep the old index available until
-the new index is ready if uninterrupted search is required.
+The current document processor stores one active chunk set per document;
+it does not provide shadow-index backfill or atomic cutover. Changing the
+active provider/model therefore requires a maintenance window: pause
+retrieval, change the embedding profile, then run
+`python manage.py reindex_document_embeddings --project-id <uuid>` (or
+`--all-projects`) to queue the documents-owned retry-safe reindex task.
+The command includes active and archived documents and excludes
+lifecycle-pending, deleted, and unsupported documents. Failed tasks retry
+up to three times; rerunning the command is safe. Resume retrieval only
+after every eligible document is `ready` with embeddings for the new
+key/version/model. Reindexing replaces derived chunks and vectors only;
+source files and user-confirmed project data are unchanged. Existing
+vectors are never mixed with the new model; searches during the maintenance
+window are unavailable. A dimension change requires a shadow vector
+column or table and an explicit migration before such a switch.
+
+OpenAI limits each embedding input to 8,192 tokens, each request to 2,048
+items, and each request to 300,000 total tokens. The router also enforces a
+200,000 UTF-8-byte request ceiling or the lower profile cost limit, plus an
+8,192-byte per-input ceiling. Document reindexing batches by both count and
+bytes. It assembles all batch responses before the atomic derived-row
+replacement and rejects the run if any batch changes the exact vector-space
+key, version, or model.
 
 ## 6. AI analysis and proposals
 

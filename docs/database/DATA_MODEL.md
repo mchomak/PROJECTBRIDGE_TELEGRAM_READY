@@ -375,6 +375,9 @@ Fields:
   `deletion_pending`, `deleted`
 - `processing_status` — `queued`, `processing`, `ready`, `failed`,
   `unsupported`
+- `processing_generation` is an internal fencing counter incremented each
+  time a worker claims processing; only the current generation can publish
+  derived chunks and embeddings
 - `created_at`
 - `archived_at`, nullable
 - `deleted_at`, nullable
@@ -426,13 +429,28 @@ Fields: `id`, `chunk_id`, `embedding_profile_key`,
 `embedding_profile_version`, `model_name`, `embedding` vector(1536),
 `created_at`.
 
-The active embedding profile must have a consistent vector dimension.
+`embedding_profile_key` stores the stable embedding-space key derived from
+provider, exact model identifier, and dimensions; it is not the routing
+profile's admin key. `embedding_profile_version` stores the independent
+`AIModelProfile.embedding_space_version`, not `config_version`. Timeout,
+rate, or fallback configuration changes therefore leave existing vectors
+queryable. Retrieval filters on the exact space-key/version/returned-model
+tuple so same-dimension but different-model vectors are never mixed.
+
 The MVP index uses a cosine HNSW index and a unique
 `(chunk_id, embedding_profile_key, embedding_profile_version, model_name)`
-key. Retrieval filters to one active profile/version/model tuple, so a
-same-dimension model can be backfilled alongside the current slice. A dimension change requires a versioned
-shadow column/table, completed backfill and verification, and an explicit
-cutover. Do not mix incompatible vector spaces in one search operation.
+key. The processor replaces a document's chunks during reprocessing, so a
+model change currently requires a maintenance window: pause retrieval,
+change the active profile, and run
+`python manage.py reindex_document_embeddings --project-id <uuid>` or use
+`--all-projects` for a deliberate full maintenance. The command queues the
+documents-owned retry-safe reindex task for active and archived documents,
+excluding lifecycle-pending, deleted, and unsupported documents. It does
+not require editing document rows. Resume retrieval only when all eligible
+documents are `ready` with embeddings in the new tuple. There is no
+shadow-index or atomic cutover path. A dimension change requires a
+versioned shadow column/table, completed backfill and verification, and an
+explicit migration before switching.
 
 ### `DocumentLifecycleRequest`
 
@@ -556,15 +574,23 @@ create a shared `ProjectConflict`.
 Fields:
 
 - `id`
-- `task_key` — unique task/profile key
+- `profile_key` — unique profile identifier
+- `task_key` — one of the six stable AI task keys
 - `provider_key`
 - `model_name`
 - `capabilities` JSONB
 - `parameters` JSONB
 - `fallback_profile_id` — nullable self-reference
+- `is_default` — the active profile for its task
 - `is_enabled`
 - `config_version`
+- `embedding_space_version` вЂ” separate vector-space revision; only
+  embedding results use it, not general profile/run configuration
 - `updated_at`
+
+Only one default profile may exist per task. Named non-default profiles
+may be selected as a compatible fallback. Configuration edits increment
+`config_version`.
 
 Provider credentials are not stored here. Store secret references or
 configuration identifiers only; actual secrets belong in environment
@@ -594,15 +620,28 @@ Fields:
 - `prompt_version`
 - `input_hash`
 - `status`
+- `attempt_count`
 - `input_tokens`, nullable
 - `output_tokens`, nullable
 - `estimated_cost`, nullable decimal
+- `reserved_cost` вЂ” cumulative conservative reservation across all attempts
+- `request_budget_limit` вЂ” request-chain ceiling snapshotted from the
+  primary profile; compatible fallbacks may lower it, never raise it
+- `daily_budget_limit` вЂ” task-chain daily ceiling snapshotted from the
+  primary profile; fallbacks cannot expand it
 - `error_code`, nullable
 - `started_at`
 - `completed_at`, nullable
 
 Store execution metadata and source references. Do not retain full
 prompts or complete sensitive source content by default.
+
+`project_id` is required for project-owned operations. Embedding
+processing and retrieval include the owning project when calling the
+router. Usage records contain hashes and metadata, never source text.
+Each primary, retry, and fallback call reserves its maximum estimate before
+execution under the task-scoped PostgreSQL lock. `reserved_cost` is never
+reduced by successful usage reconciliation or a later failed attempt.
 
 ### `AIProposal`
 

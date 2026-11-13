@@ -83,18 +83,32 @@ silently.
 
 ## AI and RAG
 
-10. **Providers and models:** Select initial providers and model
-    identifiers for every task profile.
+10. **Providers and models — resolved for Stage 10 on 2026-11-13:**
+    OpenAI is the initial provider. `message_analysis` uses
+    `gpt-6-luna` with `gpt-6.1-sol` fallback;
+    `conversation_analysis`, `contradiction_detection`, and
+    `specification_generation` use `gpt-6.1-sol` with `gpt-6-luna`
+    fallback; `document_embedding` uses `text-embedding-3-small` at 1536
+    dimensions; `rag_reranking` uses strict structured scoring with
+    `gpt-6.1-sol` and `gpt-6-luna` fallback. Credentials remain in
+    `OPENAI_API_KEY`; a model denied or unavailable to an account returns
+    a normalized provider error. Model identifiers and Responses API
+    structured-output support were checked against the official [GPT-6
+    Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and
+    [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+    catalogs on 2026-11-13. See ADR-016.
 11. **Embedding dimension — resolved for Stage 09 on 2026-11-13:** The
     initial `document_embedding` profile uses OpenAI
     `text-embedding-3-small` with 1536 dimensions. Credentials remain
     external configuration and are not required for local tests.
 12. **Embedding migration — resolved for Stage 09 on 2026-11-13:**
-    Same-dimension model changes use a separate profile/version/model slice and
-    switch retrieval only after the eligible documents are re-embedded.
-    Dimension changes use a versioned shadow column or table, verified
-    backfill, and explicit cutover. The active search never mixes vector
-    spaces.
+    Vector identity is provider + exact model identifier + dimensions,
+    with a separate `embedding_space_version`; routing `config_version`
+    changes do not hide vectors. Same-dimension model changes require a
+    maintenance window and reprocessing all eligible documents before
+    retrieval resumes. Stage 10 has no shadow index or atomic cutover.
+    Dimension changes require a versioned shadow column or table, verified
+    backfill, and explicit cutover. The active search never mixes spaces.
 13. **Chunking — resolved for Stage 09 on 2026-11-13:** Chunks are at
     most 1000 Unicode characters with 150 characters overlap. PDF chunks
     do not cross pages, DOCX chunks do not cross paragraphs or table
@@ -103,17 +117,34 @@ silently.
 14. **Retrieval — resolved for Stage 09 on 2026-11-13:** Use cosine
     distance and return five nearest chunks by default, with a maximum of
     20. Require active project membership, filter to the current project
-    and active/ready documents, and require an exact profile/version/model
-    match.
-    Do not apply a score cutoff or reranking in the MVP.
-15. **Fallback:** Define compatible fallback profiles, timeout behavior,
-    and retry limits.
+    and active/ready documents, and require an exact embedding-space
+    key/version/model match. Stage 10 provides a real reranking capability,
+    but Stage 09 retrieval does not invoke it automatically.
+15. **Fallback — resolved for Stage 10 on 2026-11-13:** Retry transient
+    rate-limit, connection, timeout, and server errors once. Only then
+    try an enabled fallback that serves the same task and required
+    capability. Embedding fallback must use the identical provider,
+    model, dimensions, and `embedding_space_version`; unrelated models
+    never share a vector slice. Never fallback for missing credentials,
+    authentication/permission errors, invalid requests, or unavailable
+    models. Provider timeout is configured per profile (30–60 seconds).
 16. **Triggers:** Finalize which events trigger automatic AI analysis
     and the debounce/batching policy for chat messages.
-17. **Cost controls:** Define per-task budgets, usage limits, and alert
-    thresholds.
-18. **Prompt/version management:** Define how prompt templates are
-    versioned and tested.
+17. **Cost controls — resolved for Stage 10 on 2026-11-13:** Seeded
+    profile defaults reserve up to USD 1.00 per task per UTC day, USD
+    0.25 per generation or reranking request, and USD 0.10 per embedding
+    request. A PostgreSQL task-scoped lock serializes reservations across
+    profiles, and fallback budget is reserved before the fallback API call.
+    Profiles cap input size, candidate count, output tokens, and timeout.
+    Usage records store actual token counts and estimated cost when supplied. The
+    estimates use editable profile rate snapshots. This does not cap
+    billing outside ProjectBridge or replace provider-side account
+    limits. See ADR-016.
+18. **Prompt/version management — resolved for Stage 10 on 2026-11-13:**
+    Callers provide a version label for each text-generation prompt.
+    The router stores the label and SHA-256 of inputs, not prompts or
+    source text. Prompt templates remain versioned alongside the
+    domain code and are tested by their owning stages. See ADR-016.
 19. **Questionnaire conflict visibility — resolved for the MVP on
     2026-11-12:** Deterministic questionnaire conflicts remain in an
     executor-only review queue until resolved. They do not appear as

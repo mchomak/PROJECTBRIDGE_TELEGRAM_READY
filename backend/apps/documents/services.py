@@ -30,6 +30,7 @@ from .models import (
     DocumentLifecycleRequest,
     DocumentLifecycleRequestStatus,
     DocumentLifecycleStatus,
+    DocumentProcessingStatus,
 )
 from .selectors import get_document_for_member, get_documents_for_member
 
@@ -269,6 +270,30 @@ def open_document_download(*, document_id, actor):
         raise DocumentNotFoundError from exc
 
 
+def queue_document_embedding_reindex(*, project_id=None):
+    """Queue a maintenance reindex for active and archived source documents."""
+    documents = Document.objects.filter(
+        lifecycle_status__in=(
+            DocumentLifecycleStatus.ACTIVE,
+            DocumentLifecycleStatus.ARCHIVED,
+        )
+    ).exclude(processing_status=DocumentProcessingStatus.UNSUPPORTED)
+    if project_id is not None:
+        documents = documents.filter(project_id=project_id)
+    document_ids = list(documents.order_by("pk").values_list("pk", flat=True))
+    if not document_ids:
+        return 0
+
+    from apps.documents.tasks import reindex_project_document
+
+    transaction.on_commit(
+        lambda ids=tuple(str(document_id) for document_id in document_ids): [
+            reindex_project_document.delay(document_id) for document_id in ids
+        ]
+    )
+    return len(document_ids)
+
+
 def _lock_member_document(*, document_id, actor):
     candidate = get_document_for_member(document_id=document_id, actor=actor)
     if candidate is None:
@@ -351,6 +376,20 @@ def _audit_lifecycle_action(*, project_id, actor, action, document):
         target_type="document",
         target_id=document.pk,
         metadata={},
+    )
+
+
+def _enqueue_document_if_queued(document):
+    if (
+        document.lifecycle_status
+        not in (DocumentLifecycleStatus.ACTIVE, DocumentLifecycleStatus.ARCHIVED)
+        or document.processing_status != DocumentProcessingStatus.QUEUED
+    ):
+        return
+    from apps.documents.tasks import process_project_document
+
+    transaction.on_commit(
+        lambda document_id=str(document.pk): process_project_document.delay(document_id)
     )
 
 
@@ -466,6 +505,7 @@ def decide_lifecycle_request(*, request_id, actor, decision):
         lifecycle_request.save(
             update_fields=["status", "deletion_after"],
         )
+        _enqueue_document_if_queued(document)
         _audit_lifecycle_action(
             project_id=project.pk,
             actor=actor,
@@ -504,6 +544,7 @@ def restore_document(*, document_id, actor):
         document.lifecycle_status = DocumentLifecycleStatus.ACTIVE
         document.archived_at = None
         document.save(update_fields=["lifecycle_status", "archived_at"])
+        _enqueue_document_if_queued(document)
         _audit_lifecycle_action(
             project_id=project.pk,
             actor=actor,
@@ -533,6 +574,7 @@ def cancel_lifecycle_request(*, request_id, actor):
         lifecycle_request.save(update_fields=["status"])
         document.lifecycle_status = DocumentLifecycleStatus.ARCHIVED
         document.save(update_fields=["lifecycle_status"])
+        _enqueue_document_if_queued(document)
         _audit_lifecycle_action(
             project_id=document.project_id,
             actor=actor,

@@ -4,8 +4,13 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 
 from apps.ai_assistant.embedding import (
+    EMBEDDING_MAX_BATCH_SIZE,
+    EMBEDDING_MAX_INPUT_TOKENS_PER_TEXT,
+    EMBEDDING_SAFE_REQUEST_BYTES,
+    EmbeddingBatch,
     EmbeddingServiceUnavailable,
     embed_texts,
+    get_embedding_input_byte_limit,
     validate_embedding_batch,
 )
 
@@ -22,13 +27,108 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def _store_result(*, document_id, chunks, batch, status):
+class EmbeddingSpaceChangedError(Exception):
+    """Sub-batch replies cannot be stored together in different vector spaces."""
+
+
+def _embed_chunks(*, chunks, project_id):
+    if not chunks:
+        raise ValueError("A document must contain at least one chunk to embed.")
+    batch_byte_limit = min(
+        get_embedding_input_byte_limit(task_key="document_embedding"),
+        EMBEDDING_SAFE_REQUEST_BYTES,
+    )
+    if batch_byte_limit < 1:
+        raise ValueError("The configured embedding request byte limit is invalid.")
+
+    vectors = []
+    identity = None
+    pending_texts = []
+    pending_bytes = 0
+
+    def submit_batch():
+        nonlocal identity, pending_bytes
+        batch = embed_texts(
+            pending_texts,
+            task_key="document_embedding",
+            project_id=project_id,
+        )
+        validate_embedding_batch(batch, expected_count=len(pending_texts))
+        batch_identity = (
+            batch.profile_key,
+            batch.profile_version,
+            batch.model_name,
+        )
+        if identity is not None and batch_identity != identity:
+            raise EmbeddingSpaceChangedError
+        identity = batch_identity
+        vectors.extend(batch.vectors)
+        pending_texts.clear()
+        pending_bytes = 0
+
+    for chunk in chunks:
+        text = chunk.content
+        text_bytes = len(text.encode("utf-8"))
+        if (
+            text_bytes > EMBEDDING_MAX_INPUT_TOKENS_PER_TEXT
+            or text_bytes > batch_byte_limit
+        ):
+            raise ValueError("A document chunk exceeds the embedding input limit.")
+        if pending_texts and (
+            len(pending_texts) >= EMBEDDING_MAX_BATCH_SIZE
+            or pending_bytes + text_bytes > batch_byte_limit
+        ):
+            submit_batch()
+        pending_texts.append(text)
+        pending_bytes += text_bytes
+
+    if pending_texts:
+        submit_batch()
+
+    return EmbeddingBatch(
+        vectors=vectors,
+        profile_key=identity[0],
+        profile_version=identity[1],
+        model_name=identity[2],
+    )
+
+
+def _claim_document_attempt(*, document_id, force_reindex):
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id).first()
+        if document is None or document.lifecycle_status not in (
+            DocumentLifecycleStatus.ACTIVE,
+            DocumentLifecycleStatus.ARCHIVED,
+        ):
+            return None, None
+        if (
+            document.processing_status == DocumentProcessingStatus.READY
+            and not force_reindex
+        ):
+            return document, None
+        document.processing_generation += 1
+        document.processing_status = DocumentProcessingStatus.PROCESSING
+        document.save(update_fields=("processing_generation", "processing_status"))
+        return document, document.processing_generation
+
+
+def _store_result(*, document_id, processing_generation, chunks, batch, status):
     with transaction.atomic():
         document = Document.objects.select_for_update().filter(pk=document_id).first()
         if (
             document is None
             or document.lifecycle_status == DocumentLifecycleStatus.DELETED
         ):
+            return document
+        if document.processing_generation != processing_generation:
+            return document
+        if document.lifecycle_status not in (
+            DocumentLifecycleStatus.ACTIVE,
+            DocumentLifecycleStatus.ARCHIVED,
+        ):
+            if document.processing_status == DocumentProcessingStatus.PROCESSING:
+                document.processing_status = DocumentProcessingStatus.QUEUED
+                document.save(update_fields=["processing_status"])
             return document
 
         document.chunks.all().delete()
@@ -66,17 +166,14 @@ def _store_result(*, document_id, chunks, batch, status):
         return document
 
 
-def process_document(*, document_id):
-    """Extract, chunk, and embed a stored document; retries replace derived rows."""
-    document = Document.objects.filter(pk=document_id).first()
-    if document is None or document.lifecycle_status == DocumentLifecycleStatus.DELETED:
-        return None
-    if document.processing_status == DocumentProcessingStatus.READY:
-        return document
-
-    Document.objects.filter(pk=document_id).update(
-        processing_status=DocumentProcessingStatus.PROCESSING
+def process_document(*, document_id, force_reindex=False):
+    """Extract, chunk, and embed a stored document; fence stale retries."""
+    document, processing_generation = _claim_document_attempt(
+        document_id=document_id,
+        force_reindex=force_reindex,
     )
+    if document is None or processing_generation is None:
+        return document
     try:
         with default_storage.open(document.storage_key, "rb") as source:
             contents = source.read()
@@ -87,6 +184,7 @@ def process_document(*, document_id):
     except NoExtractableTextError:
         return _store_result(
             document_id=document_id,
+            processing_generation=processing_generation,
             chunks=[],
             batch=None,
             status=DocumentProcessingStatus.UNSUPPORTED,
@@ -95,20 +193,18 @@ def process_document(*, document_id):
         logger.warning("Document extraction failed (%s).", type(exc).__name__)
         return _store_result(
             document_id=document_id,
+            processing_generation=processing_generation,
             chunks=[],
             batch=None,
             status=DocumentProcessingStatus.FAILED,
         )
 
     try:
-        batch = embed_texts(
-            [chunk.content for chunk in chunks],
-            task_key="document_embedding",
-        )
-        validate_embedding_batch(batch, expected_count=len(chunks))
+        batch = _embed_chunks(chunks=chunks, project_id=document.project_id)
     except EmbeddingServiceUnavailable:
         return _store_result(
             document_id=document_id,
+            processing_generation=processing_generation,
             chunks=chunks,
             batch=None,
             status=DocumentProcessingStatus.FAILED,
@@ -117,6 +213,7 @@ def process_document(*, document_id):
         logger.warning("Document embedding failed (%s).", type(exc).__name__)
         return _store_result(
             document_id=document_id,
+            processing_generation=processing_generation,
             chunks=chunks,
             batch=None,
             status=DocumentProcessingStatus.FAILED,
@@ -124,6 +221,7 @@ def process_document(*, document_id):
 
     return _store_result(
         document_id=document_id,
+        processing_generation=processing_generation,
         chunks=chunks,
         batch=batch,
         status=DocumentProcessingStatus.READY,

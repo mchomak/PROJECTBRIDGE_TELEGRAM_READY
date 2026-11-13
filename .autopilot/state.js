@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "C:/Users/McHomak/.agents/skills/autopilot",
   "startedAt": "2026-11-13T03:00:44+03:00",
-  "updatedAt": "2026-11-13T03:33:15+03:00",
+  "updatedAt": "2026-11-13T05:28:00+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -82,7 +82,7 @@ window.STATE =
       "blockedBy": [],
       "wave": 1,
       "zone": [],
-      "status": "review",
+      "status": "done",
       "startedAt": "2026-11-13T03:00:44+03:00",
       "repairs": 0,
       "handoffs": 0,
@@ -92,7 +92,9 @@ window.STATE =
       },
       "concerns": [
         "Live RAG requires Stage 10 router and configured credentials."
-      ]
+      ],
+      "finishedAt": "2026-11-13T03:33:26+03:00",
+      "commit": "27f42b8"
     },
     {
       "id": "10",
@@ -105,10 +107,17 @@ window.STATE =
       ],
       "wave": 2,
       "zone": [],
-      "status": "pending",
-      "startedAt": null,
+      "status": "review",
+      "startedAt": "2026-11-13T03:33:26+03:00",
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "tests": {
+        "passed": 369,
+        "failed": 0
+      },
+      "concerns": [
+        "Live provider not tested; configured credentials and account access required."
+      ]
     },
     {
       "id": "11",

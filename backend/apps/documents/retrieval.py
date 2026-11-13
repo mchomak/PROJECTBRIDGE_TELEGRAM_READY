@@ -53,7 +53,9 @@ def retrieve_project_evidence(
     ):
         raise ValidationError({"top_k": "Top-k must be between 1 and 20."})
 
-    query_batch = embed_texts([query], task_key="document_embedding")
+    query_batch = embed_texts(
+        [query], task_key="document_embedding", project_id=project_id
+    )
     validate_embedding_batch(query_batch, expected_count=1)
     query_vector = query_batch.vectors[0]
 
