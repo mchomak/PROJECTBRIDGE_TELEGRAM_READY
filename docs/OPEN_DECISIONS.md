@@ -128,8 +128,14 @@ silently.
     never share a vector slice. Never fallback for missing credentials,
     authentication/permission errors, invalid requests, or unavailable
     models. Provider timeout is configured per profile (30–60 seconds).
-16. **Triggers:** Finalize which events trigger automatic AI analysis
-    and the debounce/batching policy for chat messages.
+16. **AI analysis triggers — resolved for Stage 11 on 2026-11-13:** Only an
+    executor with an active project membership can start an analysis
+    manually, and only while the project is `draft` or `active`.
+    `completed` and `archived` projects reject analysis. Questionnaire,
+    chat, document-processing, and Project State events do not trigger
+    automatic analysis. Chat debounce/batching is not applicable while
+    message-triggered analysis is disabled; any future automatic trigger
+    needs a new explicit decision. See ADR-017.
 17. **Cost controls — resolved for Stage 10 on 2026-11-13:** Seeded
     profile defaults reserve up to USD 1.00 per task per UTC day, USD
     0.25 per generation or reranking request, and USD 0.10 per embedding
@@ -148,7 +154,9 @@ silently.
 19. **Questionnaire conflict visibility — resolved for the MVP on
     2026-11-12:** Deterministic questionnaire conflicts remain in an
     executor-only review queue until resolved. They do not appear as
-    shared Project State conflicts. See Stage 04–08 Autopilot spec §3.6.
+    shared Project State conflicts. AI-generated proposals use a separate
+    executor-only queue; their evidence remains AI-private until a proposal
+    is applied. See Stage 04–08 Autopilot spec §3.6 and ADR-017.
 
 ## API and implementation
 

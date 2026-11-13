@@ -771,6 +771,14 @@ export function ProjectOverviewPage() {
           >
             Open project chat
           </Link>
+          {isExecutor && (
+            <Link
+              className="button button--secondary project-state-link"
+              to={`/app/projects/${project.id}/ai`}
+            >
+              Open AI analysis and proposals
+            </Link>
+          )}
         </div>
         <span className={`status-badge status-badge--large status-badge--${project.status}`}>
           {projectStatusLabels[project.status]}

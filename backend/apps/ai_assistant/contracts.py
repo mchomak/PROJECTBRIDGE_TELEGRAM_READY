@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class TextGenerationResponse:
     input_tokens: int | None
     output_tokens: int | None
     estimated_cost: str | None
+    run_id: UUID
 
 
 @dataclass(frozen=True)

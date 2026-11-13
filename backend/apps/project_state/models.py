@@ -46,6 +46,8 @@ class ProjectConflictStatus(models.TextChoices):
 class EvidenceSourceType(models.TextChoices):
     QUESTIONNAIRE_ANSWER = "questionnaire_answer", "Questionnaire answer"
     MESSAGE = "message", "Message"
+    DOCUMENT_CHUNK = "document_chunk", "Document chunk"
+    PASSPORT = "passport", "Project passport"
 
 
 class ProjectStage(models.Model):

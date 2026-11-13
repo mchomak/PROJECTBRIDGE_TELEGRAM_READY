@@ -208,6 +208,16 @@ A proposal includes:
 AI proposals and analysis runs are private to the executor. They are not
 returned by customer-facing project endpoints.
 
+Before approval, source references and immutable excerpts belong to the
+AI-owned request/proposal evidence tables. They do not create `project_state`
+`Evidence` rows or otherwise change shared Project State. Evidence source
+resolution goes through Project State's service boundary, which validates the
+active executor, project ownership, and source lifecycle. When an executor
+applies a conflict proposal, the Project State service re-resolves each source
+inside the application transaction and compares it with the AI-time excerpt and
+metadata. If a source changed or is no longer eligible, the application rolls
+back and the proposal remains pending.
+
 ### Approval rule
 
 AI must never directly mutate shared Project State.
@@ -224,6 +234,9 @@ The flow is:
 
 Applying a proposal and changing Project State must occur in one
 database transaction. Repeated application must not create duplicates.
+An applied proposal remains idempotent on repeat requests. Invalid payloads,
+changed evidence, or failed Project State service calls roll back both the
+shared mutation and proposal review status.
 
 ## 7. Contradiction handling
 
@@ -249,17 +262,23 @@ executor review. They must not cause silent overwrites.
 AI operations run asynchronously through Celery when they may take
 significant time.
 
-Candidate triggers for the MVP:
+For the MVP, analysis starts only when an active project executor manually
+requests it. Questionnaire submissions, new messages, document processing,
+and Project State changes do not trigger analyses. Chat batching/debounce is
+not applicable while message-triggered analysis is disabled. A future
+automatic trigger requires an explicit decision and documented batching
+policy.
 
-- customer questionnaire submission;
-- new messages, grouped/debounced to avoid one expensive analysis per
-  message;
-- successful document processing;
-- manual analysis initiated by the executor.
-
-The exact trigger policy, debounce interval, duplicate-analysis
-prevention, and whether every Project State update triggers analysis
-remain open.
+The API creates a durable `AIAnalysisRequest` before enqueueing Celery work and
+returns its request UUID and status immediately. `Idempotency-Key` is scoped to
+the project and executor, so retrying the same request returns the original
+record. Requests move through queued, running, succeeded, or failed. Worker
+claims use a six-minute lease and monotonically increasing generation; Celery
+redelivery waits for an active lease, and expired leases can be reclaimed. A
+stale worker cannot persist proposals after a newer generation claims the
+request. Proposal creation and request completion commit together, preventing
+duplicate visible proposals. Only stable error codes are stored; source text,
+prompts, and provider exception detail are not logged.
 
 ## 9. Observability and cost control
 

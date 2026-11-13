@@ -494,6 +494,7 @@ status transitions, never user-entered content.
 |:-------|:---------------------------------------------------|:-----------|:------------------------------------|
 | POST   | `/api/v1/projects/{project_id}/ai/analyses/`       | Executor   | Start manual analysis; asynchronous |
 | GET    | `/api/v1/projects/{project_id}/ai/analyses/`       | Executor   | List analysis runs                  |
+| GET    | `/api/v1/projects/{project_id}/ai/analyses/{request_id}/` | Executor | Poll a queued analysis request      |
 | GET    | `/api/v1/projects/{project_id}/ai/proposals/`      | Executor   | List proposals                      |
 | GET    | `/api/v1/ai/proposals/{proposal_id}/`              | Executor   | Read proposal and evidence          |
 | POST   | `/api/v1/ai/proposals/{proposal_id}/accept/`       | Executor   | Accept proposal                     |
@@ -503,6 +504,13 @@ status transitions, never user-entered content.
 AI analysis and proposals are private to the executor. AI model profiles
 are configured through restricted backend administration in the MVP;
 they are not exposed to customers.
+
+Starting an analysis requires an `Idempotency-Key` UUID header and returns
+the durable request UUID and current status with HTTP 202. The same key from
+the same executor and project returns the original request. Only manual
+executor-triggered analysis is enabled; no chat, questionnaire, document, or
+Project State event starts analysis automatically. AI-time evidence excerpts
+stay in AI-owned tables until an approved change creates shared Project State.
 
 Applying a proposal must be idempotent and transactional with the
 corresponding Project State change.

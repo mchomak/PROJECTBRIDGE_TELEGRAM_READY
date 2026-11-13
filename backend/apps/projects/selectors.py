@@ -70,3 +70,15 @@ def get_passport_for_member(*, project_id, user):
         project__memberships__user=user,
         project__memberships__status=ProjectMemberStatus.ACTIVE,
     ).first()
+
+
+def get_passport_for_evidence(*, project_id, passport_id):
+    """Resolve a passport evidence source without crossing project boundaries."""
+    return (
+        ProjectPassport.objects.filter(
+            pk=passport_id,
+            project_id=project_id,
+        )
+        .select_related("project")
+        .first()
+    )

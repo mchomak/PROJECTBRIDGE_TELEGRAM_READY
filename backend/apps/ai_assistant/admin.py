@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AIAnalysisRun, AIModelProfile
+from .models import AIAnalysisRequest, AIAnalysisRun, AIModelProfile, AIProposal
 
 
 @admin.register(AIModelProfile)
@@ -38,6 +38,35 @@ class AIAnalysisRunAdmin(admin.ModelAdmin):
     readonly_fields = tuple(field.name for field in AIAnalysisRun._meta.fields)
     date_hierarchy = "started_at"
     ordering = ("-started_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AIAnalysisRequest)
+class AIAnalysisRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "status", "execution_generation", "created_at")
+    list_filter = ("status",)
+    readonly_fields = tuple(field.name for field in AIAnalysisRequest._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AIProposal)
+class AIProposalAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "proposal_type", "status", "created_at")
+    list_filter = ("proposal_type", "status")
+    readonly_fields = tuple(field.name for field in AIProposal._meta.fields)
 
     def has_add_permission(self, request):
         return False

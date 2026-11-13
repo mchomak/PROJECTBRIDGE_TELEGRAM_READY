@@ -2,6 +2,7 @@ import hashlib
 import uuid
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
@@ -26,6 +27,27 @@ class AIAnalysisStatus(models.TextChoices):
     RUNNING = "running", "Running"
     SUCCEEDED = "succeeded", "Succeeded"
     FAILED = "failed", "Failed"
+
+
+class AIAnalysisRequestStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+
+
+class AIProposalStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    ACCEPTED = "accepted", "Accepted"
+    REJECTED = "rejected", "Rejected"
+    APPLIED = "applied", "Applied"
+    FAILED = "failed", "Failed"
+
+
+class AIProposalType(models.TextChoices):
+    REQUIREMENT_CREATE = "requirement_create", "Create requirement"
+    OPEN_QUESTION_CREATE = "open_question_create", "Create open question"
+    CONFLICT_CREATE = "conflict_create", "Create conflict"
 
 
 class AIModelProfile(models.Model):
@@ -360,3 +382,155 @@ class AIAnalysisRun(models.Model):
 
     def __str__(self):
         return f"{self.task_key} {self.id} ({self.status})"
+
+
+class AIAnalysisRequest(models.Model):
+    """Durable executor-visible state for a queued manual analysis."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.CASCADE,
+        related_name="ai_analysis_requests",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="requested_ai_analyses",
+    )
+    run = models.ForeignKey(
+        AIAnalysisRun,
+        on_delete=models.SET_NULL,
+        related_name="requests",
+        blank=True,
+        null=True,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=AIAnalysisRequestStatus.choices,
+        default=AIAnalysisRequestStatus.QUEUED,
+    )
+    celery_task_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    idempotency_key = models.UUIDField(default=uuid.uuid4)
+    execution_generation = models.PositiveIntegerField(default=0)
+    lease_expires_at = models.DateTimeField(blank=True, null=True)
+    result_count = models.PositiveSmallIntegerField(default=0)
+    error_code = models.CharField(max_length=64, blank=True)
+    context_prepared_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at", "id")
+        indexes = [models.Index(fields=("project", "created_at"))]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("project", "requested_by", "idempotency_key"),
+                name="unique_ai_analysis_idempotency_key",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=AIAnalysisRequestStatus.values),
+                name="ai_request_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(result_count__lte=100),
+                name="ai_request_result_count_bounded",
+            ),
+        ]
+
+
+class AIProposal(models.Model):
+    """Private, evidence-backed change suggestion awaiting executor action."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        "projects.Project", on_delete=models.CASCADE, related_name="ai_proposals"
+    )
+    analysis_run = models.ForeignKey(
+        AIAnalysisRun, on_delete=models.CASCADE, related_name="proposals"
+    )
+    analysis_request = models.ForeignKey(
+        AIAnalysisRequest, on_delete=models.CASCADE, related_name="proposals"
+    )
+    idempotency_key = models.CharField(max_length=64)
+    proposal_type = models.CharField(max_length=32, choices=AIProposalType.choices)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    rationale = models.TextField(blank=True, default="")
+    proposed_payload = models.JSONField(default=dict)
+    final_payload = models.JSONField(blank=True, null=True)
+    status = models.CharField(
+        max_length=16,
+        choices=AIProposalStatus.choices,
+        default=AIProposalStatus.PENDING,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="reviewed_ai_proposals",
+        blank=True,
+        null=True,
+    )
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    applied_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("analysis_request", "idempotency_key"),
+                name="unique_ai_proposal_per_request",
+            ),
+            models.CheckConstraint(
+                condition=Q(proposal_type__in=AIProposalType.values),
+                name="ai_proposal_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=AIProposalStatus.values),
+                name="ai_proposal_status_valid",
+            ),
+        ]
+
+
+class AIProposalEvidence(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    proposal = models.ForeignKey(
+        AIProposal, on_delete=models.CASCADE, related_name="evidence_links"
+    )
+    source_type = models.CharField(max_length=32)
+    source_id = models.UUIDField()
+    excerpt = models.TextField()
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("proposal", "source_type", "source_id"),
+                name="unique_ai_proposal_evidence",
+            )
+        ]
+
+
+class AIAnalysisRequestEvidence(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    request = models.ForeignKey(
+        AIAnalysisRequest, on_delete=models.CASCADE, related_name="evidence_links"
+    )
+    source_type = models.CharField(max_length=32)
+    source_id = models.UUIDField()
+    excerpt = models.TextField()
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("request", "source_type", "source_id"),
+                name="unique_ai_analysis_request_evidence",
+            )
+        ]

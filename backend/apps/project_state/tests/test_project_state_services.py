@@ -1,3 +1,4 @@
+import hashlib
 from datetime import date
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from django.db import IntegrityError, transaction
 
 from apps.chat.services import send_message
 from apps.common.models import ProjectAuditLog
+from apps.documents.models import Document, DocumentChunk
 from apps.project_state.models import (
     Evidence,
     OpenQuestion,
@@ -26,6 +28,7 @@ from apps.project_state.services import (
     create_project_stage,
     create_requirement,
     create_task,
+    resolve_ai_evidence_references,
     update_open_question,
     update_project_conflict,
     update_project_stage,
@@ -109,6 +112,117 @@ def _evidence_refs(project, actor):
         )
         refs.append({"source_type": "questionnaire_answer", "source_id": answer.pk})
     return refs
+
+
+@pytest.mark.django_db
+def test_ai_evidence_snapshot_resolves_passport_and_ready_document_chunk(
+    project_context,
+):
+    project, executor, _customer, _outsider, _other_project = project_context
+    document = Document.objects.create(
+        project=project,
+        uploaded_by=executor,
+        original_filename="brief.txt",
+        mime_type="text/plain",
+        file_size=15,
+        checksum_sha256=hashlib.sha256(b"approved evidence").hexdigest(),
+        storage_key=f"ai-evidence/{uuid4()}.txt",
+        lifecycle_status="active",
+        processing_status="ready",
+    )
+    chunk = DocumentChunk.objects.create(
+        document=document,
+        chunk_index=0,
+        content="Approved document evidence.",
+        metadata={"start_char": 0, "end_char": 28},
+    )
+
+    snapshots = resolve_ai_evidence_references(
+        project_id=project.pk,
+        actor=executor,
+        evidence_refs=[
+            {"source_type": "passport", "source_id": str(project.passport.pk)},
+            {"source_type": "document_chunk", "source_id": str(chunk.pk)},
+        ],
+    )
+
+    passport_snapshot = snapshots[("passport", project.passport.pk)]
+    chunk_snapshot = snapshots[("document_chunk", chunk.pk)]
+    assert passport_snapshot["metadata"]["version"] == project.passport.version
+    assert chunk_snapshot["excerpt"] == chunk.content
+    assert chunk_snapshot["metadata"]["document_id"] == str(document.pk)
+    assert chunk_snapshot["metadata"]["filename"] == "brief.txt"
+    assert not Evidence.objects.filter(
+        project=project,
+        source_type__in=("passport", "document_chunk"),
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_ai_evidence_snapshot_rejects_customer_and_cross_project_source(
+    project_context,
+):
+    project, executor, customer, _outsider, other_project = project_context
+
+    with pytest.raises(ProjectStatePermissionError):
+        resolve_ai_evidence_references(
+            project_id=project.pk,
+            actor=customer,
+            evidence_refs=[
+                {"source_type": "passport", "source_id": str(project.passport.pk)}
+            ],
+        )
+    with pytest.raises(ProjectStateNotFoundError):
+        resolve_ai_evidence_references(
+            project_id=project.pk,
+            actor=executor,
+            evidence_refs=[
+                {
+                    "source_type": "passport",
+                    "source_id": str(other_project.passport.pk),
+                }
+            ],
+        )
+
+
+@pytest.mark.django_db
+def test_conflict_application_rejects_source_changed_since_ai_snapshot(project_context):
+    project, executor, _customer, _outsider, _other_project = project_context
+    refs = _evidence_refs(project, executor)
+    snapshots = resolve_ai_evidence_references(
+        project_id=project.pk,
+        actor=executor,
+        evidence_refs=[
+            {"source_type": item["source_type"], "source_id": str(item["source_id"])}
+            for item in refs
+        ],
+    )
+    expected = [
+        {
+            "source_type": snapshot["source_type"],
+            "source_id": str(snapshot["source_id"]),
+            "excerpt": snapshot["excerpt"],
+            "metadata": snapshot["metadata"],
+        }
+        for snapshot in snapshots.values()
+    ]
+    answer = QuestionnaireAnswer.objects.get(pk=refs[0]["source_id"])
+    answer.value = "Updated after analysis"
+    answer.save(update_fields=("value",))
+
+    with pytest.raises(ProjectStateConflictError):
+        create_project_conflict(
+            project_id=project.pk,
+            actor=executor,
+            data={
+                "title": "AI-detected conflict",
+                "description": "Two source values differ.",
+                "evidence_refs": refs,
+            },
+            expected_evidence=expected,
+        )
+
+    assert not ProjectConflict.objects.filter(project=project).exists()
 
 
 @pytest.mark.django_db

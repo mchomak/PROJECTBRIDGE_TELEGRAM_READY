@@ -649,6 +649,7 @@ def generate_text(
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             estimated_cost=str(run.estimated_cost) if run.estimated_cost else None,
+            run_id=run.pk,
         )
     except AIServiceError as error:
         if isinstance(error, AIProviderUnavailable):

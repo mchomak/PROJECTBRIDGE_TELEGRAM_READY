@@ -21,6 +21,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/proposals/{proposal_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ai_proposal_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/proposals/{proposal_id}/accept/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ai_proposal_accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/proposals/{proposal_id}/apply-edited/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ai_proposal_apply_edited"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/proposals/{proposal_id}/reject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ai_proposal_reject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/csrf/": {
         parameters: {
             query?: never;
@@ -356,6 +420,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["projects_update_metadata"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ai/analyses/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ai_analysis_list"];
+        put?: never;
+        post: operations["ai_analysis_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ai/analyses/{request_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ai_analysis_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/ai/proposals/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ai_proposal_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/archive/": {
@@ -810,12 +922,120 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AIAnalysisRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["AIAnalysisRequestStatusEnum"];
+            readonly result_count: number;
+            readonly error_code: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly started_at: string | null;
+            /** Format: date-time */
+            readonly completed_at: string | null;
+            readonly run: components["schemas"]["AIAnalysisRunSummary"] | null;
+        };
+        AIAnalysisRequestPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["AIAnalysisRequest"][];
+        };
+        /**
+         * @description * `queued` - Queued
+         *     * `running` - Running
+         *     * `succeeded` - Succeeded
+         *     * `failed` - Failed
+         * @enum {string}
+         */
+        AIAnalysisRequestStatusEnum: "queued" | "running" | "succeeded" | "failed";
+        AIAnalysisRunSummary: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly task_key: components["schemas"]["TaskKeyEnum"];
+            readonly trigger_type: string;
+            readonly provider_key: string;
+            readonly model_name: string;
+            readonly profile_version: number;
+            readonly status: components["schemas"]["AIAnalysisRunSummaryStatusEnum"];
+            readonly input_tokens: number | null;
+            readonly output_tokens: number | null;
+            /** Format: decimal */
+            readonly estimated_cost: string | null;
+            readonly error_code: string;
+            readonly attempt_count: number;
+            /** Format: date-time */
+            readonly started_at: string;
+            /** Format: date-time */
+            readonly completed_at: string | null;
+        };
+        /**
+         * @description * `running` - Running
+         *     * `succeeded` - Succeeded
+         *     * `failed` - Failed
+         * @enum {string}
+         */
+        AIAnalysisRunSummaryStatusEnum: "running" | "succeeded" | "failed";
+        AIProposal: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly analysis_run_id: string;
+            readonly proposal_type: components["schemas"]["ProposalTypeEnum"];
+            readonly title: string;
+            readonly description: string;
+            readonly rationale: string;
+            readonly proposed_payload: unknown;
+            readonly final_payload: unknown;
+            readonly status: components["schemas"]["AIProposalStatusEnum"];
+            /** Format: uuid */
+            readonly reviewed_by_id: string | null;
+            /** Format: date-time */
+            readonly reviewed_at: string | null;
+            /** Format: date-time */
+            readonly applied_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly evidence: components["schemas"]["AIProposalEvidence"][];
+        };
+        AIProposalEvidence: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly source_type: string;
+            /** Format: uuid */
+            readonly source_id: string;
+            readonly excerpt: string;
+            readonly metadata: unknown;
+        };
+        AIProposalPage: {
+            count: number;
+            /** Format: uri */
+            next: string | null;
+            /** Format: uri */
+            previous: string | null;
+            results: components["schemas"]["AIProposal"][];
+        };
+        /**
+         * @description * `pending` - Pending
+         *     * `accepted` - Accepted
+         *     * `rejected` - Rejected
+         *     * `applied` - Applied
+         *     * `failed` - Failed
+         * @enum {string}
+         */
+        AIProposalStatusEnum: "pending" | "accepted" | "rejected" | "applied" | "failed";
         /**
          * @description * `archive` - Archive
          *     * `permanent_delete` - Permanent delete
          * @enum {string}
          */
         ActionEnum: "archive" | "permanent_delete";
+        ApplyEditedProposal: {
+            final_payload: unknown;
+        };
         ConfirmVerificationRequest: {
             token: string;
         };
@@ -959,9 +1179,11 @@ export interface components {
         /**
          * @description * `questionnaire_answer` - Questionnaire answer
          *     * `message` - Message
+         *     * `document_chunk` - Document chunk
+         *     * `passport` - Project passport
          * @enum {string}
          */
-        EvidenceSourceTypeEnum: "questionnaire_answer" | "message";
+        EvidenceSourceTypeEnum: "questionnaire_answer" | "message" | "document_chunk" | "passport";
         HealthResponse: {
             status: components["schemas"]["HealthResponseStatusEnum"];
             dependencies: {
@@ -1395,6 +1617,13 @@ export interface components {
          * @enum {string}
          */
         ProjectTypeEnum: "website" | "telegram_bot" | "automation" | "other";
+        /**
+         * @description * `requirement_create` - Create requirement
+         *     * `open_question_create` - Create open question
+         *     * `conflict_create` - Create conflict
+         * @enum {string}
+         */
+        ProposalTypeEnum: "requirement_create" | "open_question_create" | "conflict_create";
         QuestionnaireAnswerResponse: {
             readonly question_key: string;
             readonly value: unknown;
@@ -1558,6 +1787,16 @@ export interface components {
             /** Format: date */
             due_date?: string | null;
         };
+        /**
+         * @description * `message_analysis` - Message analysis
+         *     * `conversation_analysis` - Conversation analysis
+         *     * `contradiction_detection` - Contradiction detection
+         *     * `document_embedding` - Document embedding
+         *     * `rag_reranking` - RAG reranking
+         *     * `specification_generation` - Specification generation
+         * @enum {string}
+         */
+        TaskKeyEnum: "message_analysis" | "conversation_analysis" | "contradiction_detection" | "document_embedding" | "rag_reranking" | "specification_generation";
         TaskPage: {
             count: number;
             /** Format: uri */
@@ -1661,6 +1900,96 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    ai_proposal_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIProposal"];
+                };
+            };
+        };
+    };
+    ai_proposal_accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIProposal"];
+                };
+            };
+        };
+    };
+    ai_proposal_apply_edited: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyEditedProposal"];
+                "application/x-www-form-urlencoded": components["schemas"]["ApplyEditedProposal"];
+                "multipart/form-data": components["schemas"]["ApplyEditedProposal"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIProposal"];
+                };
+            };
+        };
+    };
+    ai_proposal_reject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIProposal"];
                 };
             };
         };
@@ -2847,6 +3176,93 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    ai_analysis_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIAnalysisRequestPage"];
+                };
+            };
+        };
+    };
+    ai_analysis_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIAnalysisRequest"];
+                };
+            };
+        };
+    };
+    ai_analysis_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIAnalysisRequest"];
+                };
+            };
+        };
+    };
+    ai_proposal_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIProposalPage"];
                 };
             };
         };

@@ -15,6 +15,7 @@ from apps.projects.models import (
     ProjectMemberStatus,
     ProjectStatus,
 )
+from apps.projects.selectors import get_passport_for_evidence
 from apps.questionnaire.selectors import get_submitted_answer_for_evidence
 
 from .models import (
@@ -570,12 +571,120 @@ def _snapshot_message(*, project, source_id):
     }
 
 
+def _snapshot_document_chunk(*, project, source_id):
+    from apps.documents.selectors import get_document_chunk_for_evidence
+
+    chunk = get_document_chunk_for_evidence(project_id=project.pk, chunk_id=source_id)
+    if chunk is None:
+        raise ProjectStateNotFoundError
+    return {
+        "source_type": EvidenceSourceType.DOCUMENT_CHUNK,
+        "source_id": chunk.pk,
+        "excerpt": chunk.content,
+        "metadata": {
+            "document_id": str(chunk.document_id),
+            "filename": chunk.document.original_filename,
+            "chunk_index": chunk.chunk_index,
+            "page_number": chunk.page_number,
+            "source_location": chunk.metadata,
+        },
+    }
+
+
+def _snapshot_passport(*, project, source_id):
+    passport = get_passport_for_evidence(project_id=project.pk, passport_id=source_id)
+    if passport is None:
+        raise ProjectStateNotFoundError
+    content = {
+        "goal": passport.goal,
+        "target_audience": passport.target_audience,
+        "expected_result": passport.expected_result,
+        "functional_scope": passport.functional_scope,
+        "integrations": passport.integrations,
+        "constraints": passport.constraints,
+        "deadline": passport.deadline.isoformat() if passport.deadline else None,
+        "budget_min": str(passport.budget_min)
+        if passport.budget_min is not None
+        else None,
+        "budget_max": str(passport.budget_max)
+        if passport.budget_max is not None
+        else None,
+        "currency": passport.currency,
+        "additional_data": passport.additional_data,
+    }
+    return {
+        "source_type": EvidenceSourceType.PASSPORT,
+        "source_id": passport.pk,
+        "excerpt": json.dumps(content, ensure_ascii=False, sort_keys=True),
+        "metadata": {"version": passport.version},
+    }
+
+
 def _snapshot_evidence_source(*, project, source_type, source_id):
     if source_type == EvidenceSourceType.QUESTIONNAIRE_ANSWER:
         return _snapshot_questionnaire_answer(project=project, source_id=source_id)
     if source_type == EvidenceSourceType.MESSAGE:
         return _snapshot_message(project=project, source_id=source_id)
+    if source_type == EvidenceSourceType.DOCUMENT_CHUNK:
+        return _snapshot_document_chunk(project=project, source_id=source_id)
+    if source_type == EvidenceSourceType.PASSPORT:
+        return _snapshot_passport(project=project, source_id=source_id)
     _validation_error("evidence_refs", "This evidence source is not available.")
+
+
+def resolve_ai_evidence_references(*, project_id, actor, evidence_refs):
+    """Validate and snapshot sources for private analysis without state writes."""
+    if (
+        not isinstance(evidence_refs, list)
+        or not evidence_refs
+        or len(evidence_refs) > 100
+    ):
+        _validation_error("evidence_refs", "Provide between one and 100 references.")
+    normalized = []
+    seen = set()
+    for index, reference in enumerate(evidence_refs):
+        if not isinstance(reference, dict) or set(reference) != {
+            "source_type",
+            "source_id",
+        }:
+            _validation_error(
+                f"evidence_refs.{index}", "Provide a source_type and source_id."
+            )
+        source_type = reference["source_type"]
+        if source_type not in EvidenceSourceType.values:
+            _validation_error("evidence_refs", "This evidence source is unavailable.")
+        source_id = _uuid_value(reference["source_id"], field="evidence_refs")
+        source_key = (source_type, source_id)
+        if source_key in seen:
+            _validation_error("evidence_refs", "Evidence references must be unique.")
+        seen.add(source_key)
+        normalized.append(source_key)
+
+    with transaction.atomic():
+        try:
+            project = Project.objects.select_for_update().get(pk=project_id)
+        except (Project.DoesNotExist, ValueError, TypeError) as exc:
+            raise ProjectStateNotFoundError from exc
+        membership = ProjectMember.objects.filter(
+            project_id=project.pk,
+            user=actor,
+            status=ProjectMemberStatus.ACTIVE,
+        ).first()
+        if membership is None:
+            raise ProjectStateNotFoundError
+        if membership.role != ProjectMemberRole.EXECUTOR:
+            raise ProjectStatePermissionError
+        snapshots = []
+        for source_type, source_id in normalized:
+            snapshots.append(
+                _snapshot_evidence_source(
+                    project=project, source_type=source_type, source_id=source_id
+                )
+            )
+    return {
+        (snapshot["source_type"], snapshot["source_id"]): snapshot
+        for snapshot in snapshots
+    }
 
 
 def _normalize_evidence_refs(refs):
@@ -607,7 +716,7 @@ def _normalize_evidence_refs(refs):
     return normalized
 
 
-def create_project_conflict(*, project_id, actor, data):
+def create_project_conflict(*, project_id, actor, data, expected_evidence=None):
     values = _validate_object(
         data,
         allowed_fields={"title", "description", "evidence_refs"},
@@ -616,6 +725,44 @@ def create_project_conflict(*, project_id, actor, data):
     _text(values, "title", required=True, max_length=255)
     _text(values, "description")
     source_ids = _normalize_evidence_refs(values.pop("evidence_refs"))
+    expected_by_key = {}
+    if expected_evidence is not None:
+        if not isinstance(expected_evidence, list) or len(expected_evidence) > 100:
+            _validation_error(
+                "expected_evidence", "Provide a valid evidence snapshot list."
+            )
+        for index, item in enumerate(expected_evidence):
+            if not isinstance(item, dict) or set(item) != {
+                "source_type",
+                "source_id",
+                "excerpt",
+                "metadata",
+            }:
+                _validation_error(
+                    f"expected_evidence.{index}", "Provide a complete source snapshot."
+                )
+            source_type = item["source_type"]
+            if source_type not in EvidenceSourceType.values:
+                _validation_error(
+                    "expected_evidence", "This evidence source is unavailable."
+                )
+            source_id = _uuid_value(item["source_id"], field="expected_evidence")
+            if not isinstance(item["excerpt"], str) or not isinstance(
+                item["metadata"], dict
+            ):
+                _validation_error(
+                    "expected_evidence", "Provide a valid source snapshot."
+                )
+            key = (source_type, source_id)
+            if key in expected_by_key:
+                _validation_error(
+                    "expected_evidence", "Source snapshots must be unique."
+                )
+            expected_by_key[key] = item
+        if set(expected_by_key) != set(source_ids):
+            _validation_error(
+                "expected_evidence", "Snapshots must match the evidence references."
+            )
 
     with transaction.atomic():
         project = _authorize_project_for_write(project_id=project_id, actor=actor)
@@ -627,6 +774,18 @@ def create_project_conflict(*, project_id, actor, data):
             )
             for source_type, source_id in source_ids
         ]
+        if expected_by_key and any(
+            snapshot["excerpt"]
+            != expected_by_key[(snapshot["source_type"], snapshot["source_id"])][
+                "excerpt"
+            ]
+            or snapshot["metadata"]
+            != expected_by_key[(snapshot["source_type"], snapshot["source_id"])][
+                "metadata"
+            ]
+            for snapshot in snapshots
+        ):
+            raise ProjectStateConflictError
         conflict = ProjectConflict.objects.create(
             project=project,
             created_by=actor,

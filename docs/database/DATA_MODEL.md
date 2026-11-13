@@ -548,13 +548,14 @@ terminal. No percentage completion field is defined.
 Fields: `id`, `project_id`, `source_type`, `source_id`, `excerpt`,
 `metadata` JSONB, `created_at`.
 
-`source_type` is `questionnaire_answer` or `message`. `source_id` is a
-polymorphic UUID; the owning app's selector must validate that the
-referenced source exists and belongs to the same project. Questionnaire
-answers are resolved by the questionnaire selector and messages by the
-chat selector. A plain polymorphic UUID cannot be protected by a normal
-database foreign key. Evidence snapshots and conflict links are
-immutable; a normal update or delete of Evidence is rejected.
+  `source_type` is `questionnaire_answer`, `message`, `document_chunk`, or
+  `passport`. `source_id` is a polymorphic UUID; the owning app's selector
+  must validate that the referenced source exists, is eligible, and belongs
+  to the same project. Questionnaire answers, chat messages, document chunks,
+  and passports are resolved through their owning apps. A plain polymorphic
+  UUID cannot be protected by a normal database foreign key. Shared evidence
+  snapshots and conflict links are immutable; a normal update or delete of
+  Evidence is rejected.
 
 ### Evidence links
 
@@ -667,9 +668,28 @@ not included in the customer-facing Project State response.
 
 ### `AIProposalEvidence`
 
-Fields: `id`, `proposal_id`, `evidence_id`, `created_at`.
+  Fields: `id`, `proposal_id`, `source_type`, `source_id`, `excerpt`,
+  `metadata`, `created_at`.
 
-Constraint: unique `(proposal_id, evidence_id)`.
+  Constraint: unique `(proposal_id, source_type, source_id)`. These are
+  executor-private AI-time snapshots, not shared Project State Evidence rows.
+  Every proposal revalidates all source snapshots before application; stale or
+  deleted evidence leaves the proposal pending. Accepted conflict proposals
+  also revalidate snapshots as the Project State service creates shared
+  Evidence and the conflict in the same transaction.
+
+  ### `AIAnalysisRequest`
+
+  Fields: `id`, `project_id`, `requested_by_id`, nullable `run_id`, `status`,
+  `celery_task_id`, `idempotency_key`, `execution_generation`,
+  `lease_expires_at`, `context_prepared_at`, `result_count`, `error_code`,
+  `created_at`, `started_at`, `completed_at`.
+
+  Statuses are `queued`, `running`, `succeeded`, and `failed`. Unique
+  `(project_id, requested_by_id, idempotency_key)` makes request retries
+  idempotent. Worker leases and generation fencing prevent stale or duplicate
+  workers from publishing proposals. `AIAnalysisRequestEvidence` stores the
+  private, immutable source references and excerpts used for that request.
 
 ## 10. Specifications and audit
 
