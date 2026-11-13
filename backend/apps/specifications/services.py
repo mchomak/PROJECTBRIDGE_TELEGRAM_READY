@@ -34,8 +34,11 @@ from .selectors import (
 GENERATION_LEASE = timedelta(minutes=6)
 GENERATION_DISPATCH_STALE_AFTER = timedelta(minutes=1)
 GENERATION_DISPATCH_LEASE = timedelta(minutes=2)
-GENERATION_DISPATCH_RETRY_DELAY = timedelta(seconds=30)
-MAX_GENERATION_DISPATCH_ATTEMPTS = 5
+GENERATION_DISPATCH_RETRY_BASE = timedelta(seconds=30)
+GENERATION_DISPATCH_RETRY_MAX = timedelta(minutes=30)
+GENERATION_DISPATCH_UNAVAILABLE_AFTER = 5
+GENERATION_DISPATCH_BACKLOG_WARNING_AFTER = 5
+MAX_GENERATION_DISPATCH_FAILURES = 12
 GENERATION_DISPATCH_BATCH_SIZE = 100
 MAX_MARKDOWN_LENGTH = 100_000
 ERROR_CODE_PATTERN = re.compile(r"^[a-z0-9_]{1,64}$")
@@ -225,6 +228,15 @@ def _enqueue_generation(*, request_id, task_id, task, require_stale=False):
             # The durable dispatch lease will expire and Beat will recover it.
             pass
         return False
+    try:
+        _record_generation_dispatch_success(
+            request_id=request_id,
+            task_id=task_id,
+            attempt=attempt,
+        )
+    except Exception:
+        # A successful publish remains recoverable if its outcome marker cannot save.
+        pass
     return True
 
 
@@ -245,18 +257,56 @@ def _reserve_generation_dispatch(*, request_id, task_id, require_stale):
             and request.dispatch_lease_expires_at > now
         ):
             return None
-        if request.dispatch_attempts >= MAX_GENERATION_DISPATCH_ATTEMPTS:
-            _finish_request(
-                request,
-                status=SpecificationGenerationStatus.FAILED,
-                error_code="queue_unavailable",
-            )
-            return None
-
+        if (
+            request.dispatch_successful_at is None
+            and request.dispatch_attempts > request.dispatch_failures
+        ):
+            # An expired reservation without a recorded broker error is ambiguous.
+            request.dispatch_successful_at = now
+            if request.dispatch_attempts >= GENERATION_DISPATCH_BACKLOG_WARNING_AFTER:
+                request.error_code = "worker_backlog"
         request.dispatch_attempts += 1
         request.dispatch_lease_expires_at = now + GENERATION_DISPATCH_LEASE
-        request.save(update_fields=("dispatch_attempts", "dispatch_lease_expires_at"))
+        request.save(
+            update_fields=(
+                "dispatch_attempts",
+                "dispatch_lease_expires_at",
+                "dispatch_successful_at",
+                "error_code",
+            )
+        )
         return request.dispatch_attempts
+
+
+def _record_generation_dispatch_success(*, request_id, task_id, attempt):
+    with transaction.atomic():
+        request = (
+            SpecificationGenerationRequest.objects.select_for_update()
+            .filter(
+                pk=request_id,
+                celery_task_id=task_id,
+                status=SpecificationGenerationStatus.QUEUED,
+                dispatch_attempts=attempt,
+            )
+            .first()
+        )
+        if request is None:
+            return
+        fields = []
+        if request.dispatch_successful_at is None:
+            request.dispatch_successful_at = timezone.now()
+            fields.append("dispatch_successful_at")
+        if request.dispatch_failures:
+            request.dispatch_failures = 0
+            fields.append("dispatch_failures")
+        if request.dispatch_attempts >= GENERATION_DISPATCH_BACKLOG_WARNING_AFTER:
+            request.error_code = "worker_backlog"
+            fields.append("error_code")
+        elif request.error_code in {"queue_unavailable", "worker_backlog"}:
+            request.error_code = ""
+            fields.append("error_code")
+        if fields:
+            request.save(update_fields=tuple(fields))
 
 
 def _record_generation_dispatch_failure(*, request_id, task_id, attempt):
@@ -274,15 +324,27 @@ def _record_generation_dispatch_failure(*, request_id, task_id, attempt):
         )
         if request is None:
             return
-        if request.dispatch_attempts >= MAX_GENERATION_DISPATCH_ATTEMPTS:
-            _finish_request(
-                request,
-                status=SpecificationGenerationStatus.FAILED,
-                error_code="queue_unavailable",
+        request.dispatch_failures = min(
+            MAX_GENERATION_DISPATCH_FAILURES, request.dispatch_failures + 1
+        )
+        if request.dispatch_failures >= GENERATION_DISPATCH_UNAVAILABLE_AFTER:
+            request.error_code = "queue_unavailable"
+        delay = _generation_dispatch_retry_delay(request.dispatch_failures)
+        request.dispatch_lease_expires_at = now + delay
+        request.save(
+            update_fields=(
+                "error_code",
+                "dispatch_failures",
+                "dispatch_lease_expires_at",
             )
-            return
-        request.dispatch_lease_expires_at = now + GENERATION_DISPATCH_RETRY_DELAY
-        request.save(update_fields=("dispatch_lease_expires_at",))
+        )
+
+
+def _generation_dispatch_retry_delay(failures):
+    multiplier = 2 ** max(0, min(failures - 1, 10))
+    return min(
+        GENERATION_DISPATCH_RETRY_BASE * multiplier, GENERATION_DISPATCH_RETRY_MAX
+    )
 
 
 def _stale_generation_dispatch_candidates(*, now=None):
@@ -340,6 +402,7 @@ def _finish_request(request, *, status, error_code=""):
             "completed_at",
             "lease_expires_at",
             "dispatch_lease_expires_at",
+            "dispatch_failures",
         )
     )
 
@@ -430,18 +493,24 @@ def claim_generation_request(*, request_id):
             return request.status, request.execution_generation, 0, None, None
 
         request.status = SpecificationGenerationStatus.RUNNING
+        request.dispatch_attempts = 0
+        request.dispatch_failures = 0
         request.execution_generation += 1
         request.lease_expires_at = now + GENERATION_LEASE
         request.dispatch_lease_expires_at = None
+        request.dispatch_successful_at = None
         if request.started_at is None:
             request.started_at = now
         request.error_code = ""
         request.save(
             update_fields=(
                 "status",
+                "dispatch_attempts",
                 "execution_generation",
                 "lease_expires_at",
                 "dispatch_lease_expires_at",
+                "dispatch_successful_at",
+                "dispatch_failures",
                 "started_at",
                 "error_code",
             )

@@ -85,6 +85,7 @@ class DocumentResponseSerializer(serializers.ModelSerializer):
             "checksum_sha256",
             "lifecycle_status",
             "processing_status",
+            "processing_dispatch_error_code",
             "created_at",
             "archived_at",
             "deleted_at",

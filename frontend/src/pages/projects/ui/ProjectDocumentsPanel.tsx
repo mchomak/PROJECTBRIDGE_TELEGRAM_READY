@@ -40,6 +40,18 @@ function processingLabel(status: ProjectDocument['processing_status']): string {
   return 'Unsupported · not searchable';
 }
 
+function processingDispatchWarning(document: ProjectDocument): string | null {
+  if (
+    !['queued', 'processing'].includes(document.processing_status) ||
+    !['queue_unavailable', 'worker_backlog'].includes(document.processing_dispatch_error_code)
+  ) {
+    return null;
+  }
+  return document.processing_status === 'queued'
+    ? 'The upload is saved and waiting for processing. The system will keep retrying; processing has not started.'
+    : 'The document worker has not claimed the recovery attempt. The system will keep retrying; the document is not searchable.';
+}
+
 function remainingTime(deadline: string, now: number): string {
   const remainingMinutes = Math.ceil((new Date(deadline).getTime() - now) / 60_000);
   if (remainingMinutes <= 0) return 'The cancellation window has ended. Deletion is queued.';
@@ -307,9 +319,18 @@ export function ProjectDocumentsPanel({
                   </div>
                   <div className="document-row__status">
                     <span className="status-badge">
-                      {processingLabel(document.processing_status)}
+                      {['queue_unavailable', 'worker_backlog'].includes(
+                        document.processing_dispatch_error_code,
+                      )
+                        ? 'Waiting for processing · retrying'
+                        : processingLabel(document.processing_status)}
                     </span>
                     <span>{new Date(document.created_at).toLocaleDateString()}</span>
+                    {processingDispatchWarning(document) && (
+                      <p className="document-dispatch-warning" role="status">
+                        {processingDispatchWarning(document)}
+                      </p>
+                    )}
                   </div>
                   <div className="document-row__actions">
                     <button

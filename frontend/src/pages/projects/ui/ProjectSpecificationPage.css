@@ -190,6 +190,12 @@
   background: #fffaf0;
 }
 
+.specification-generation--delayed {
+  border-color: #ecd6a8;
+  background: #fff8e8;
+  color: #6c552b;
+}
+
 .specification-conflict h3 {
   margin: 0 0 5px;
   color: #773d3d;

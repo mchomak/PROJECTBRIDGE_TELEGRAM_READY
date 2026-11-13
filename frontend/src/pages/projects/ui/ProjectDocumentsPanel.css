@@ -132,6 +132,19 @@
   white-space: nowrap;
 }
 
+.document-dispatch-warning {
+  max-width: 320px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #ecd6a8;
+  border-radius: 7px;
+  background: #fff8e8;
+  color: #6c552b;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+}
+
 .document-row__actions {
   display: flex;
   flex-wrap: wrap;

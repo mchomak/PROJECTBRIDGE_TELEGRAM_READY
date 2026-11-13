@@ -39,12 +39,19 @@ there is no product policy allowing them to become specification facts.
   `specification_generation`. Require an executor-scoped idempotency key and
   fence workers by request generation and specification version.
 - Close the database-commit/queue-dispatch crash gap with a Celery Beat
-  recovery sweep every 60 seconds. Persist a dispatch attempt count and a
-  two-minute dispatch lease; reserve redispatch under a row lock and reuse the
-  original request and Celery task IDs. Concurrent sweepers therefore reserve
-  only one dispatch at a time. Limit recovery to five dispatch attempts, then
-  mark the request failed with `queue_unavailable` so it cannot block a new
-  request. Worker claims and execution fencing remain required for every
+  recovery sweep every 60 seconds. Persist dispatch attempts, publish
+  exceptions, an ambiguous/success marker, and a two-minute dispatch lease;
+  reserve redispatch under a row lock and reuse the original request and Celery
+  task IDs. Concurrent sweepers therefore reserve only one dispatch at a time.
+  Publish exceptions are ambiguous because an error can follow broker
+  acceptance. Cap the stored exception count at 12 and use exponential backoff
+  from 30 seconds to 30 minutes; after five exceptions expose
+  `queue_unavailable` while keeping the request queued, then
+  continue automatic recovery with the same task ID until worker claim or
+  explicit cancellation. Neither exception count nor publish attempts fence a
+  message that may already be queued. After five dispatch reservations without
+  a worker claim, expose nonterminal `worker_backlog`; worker claim clears both
+  warnings. Worker claims and execution fencing remain required for every
   delivery.
 - At enqueue, hash a canonical structured context. Do not persist the raw
   context or complete prompt. Rebuild and compare the hash after prompt

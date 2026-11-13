@@ -2,7 +2,7 @@
 
 **Status:** Architecture baseline for the MVP  
 **Language:** English  
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-13
 
 ## Purpose
 
@@ -29,6 +29,7 @@ invented during implementation.
 | [Access Control and Security](security/ACCESS_CONTROL_AND_SECURITY.md) | Roles, permissions, authentication, secrets, security baseline, retention     |
 | [Document Lifecycle](documents/DOCUMENT_LIFECYCLE.md)                  | Upload, parsing, storage, shared visibility, archive and deletion workflow    |
 | [Local Development](operations/LOCAL_DEVELOPMENT.md)                   | Docker Compose services, environment configuration, local workflows           |
+| [MVP Verification Report](operations/MVP_VERIFICATION_REPORT.md)       | Stage 13 integration evidence, checks, and known limitations                   |
 | [Open Decisions](OPEN_DECISIONS.md)                                    | Items that must be decided before or during implementation                    |
 | [Architecture Decision Records](decisions/)                            | Short records explaining major architecture choices                           |
 

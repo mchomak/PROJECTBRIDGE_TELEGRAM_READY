@@ -159,6 +159,8 @@ reliability, deployment, security, or team-ownership requirement.
 
 - Database transactions protect multi-step business operations.
 - Enqueue background work after the database transaction commits.
+- Use durable queue state and periodic, bounded recovery where loss between
+  commit and broker publication would otherwise strand work.
 - Long-running AI and document operations must not block ordinary HTTP
   requests.
 - Background tasks must be retry-safe and idempotent where practical.

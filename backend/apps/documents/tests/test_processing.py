@@ -1030,7 +1030,7 @@ def test_upload_enqueues_processing_only_after_the_database_commit(tmp_path, set
         data={"name": "After commit", "project_type": "website"},
     )
 
-    with patch("apps.documents.tasks.process_project_document.delay") as queued:
+    with patch("apps.documents.tasks.process_project_document.apply_async") as queued:
         with transaction.atomic():
             document = upload_document(
                 project_id=project.pk,
@@ -1039,4 +1039,565 @@ def test_upload_enqueues_processing_only_after_the_database_commit(tmp_path, set
             )
             queued.assert_not_called()
 
-        queued.assert_called_once_with(str(document.pk))
+        queued.assert_called_once_with(
+            args=(str(document.pk), 0),
+            task_id=f"{document.pk}:process:0",
+        )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_failed_upload_dispatch_preserves_file_and_beat_recovers_it(
+    tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.storage import default_storage
+    from django.utils import timezone
+
+    from apps.documents import tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.documents.services import upload_document
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(email="upload-recovery@example.com")
+    project = create_project(
+        actor=actor,
+        data={"name": "Upload recovery", "project_type": "website"},
+    )
+
+    def broker_unavailable(*args, **kwargs):
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(
+        tasks.process_project_document, "apply_async", broker_unavailable
+    )
+    document = upload_document(
+        project_id=project.pk,
+        actor=actor,
+        file=SimpleUploadedFile("recovery.txt", b"Durable uploaded text."),
+    )
+
+    document.refresh_from_db()
+    assert Document.objects.filter(pk=document.pk).exists()
+    assert document.processing_status == DocumentProcessingStatus.QUEUED
+    with default_storage.open(document.storage_key, "rb") as stored:
+        assert stored.read() == b"Durable uploaded text."
+
+    Document.objects.filter(pk=document.pk).update(
+        created_at=timezone.now() - timedelta(days=1),
+        processing_dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    published = []
+    monkeypatch.setattr(
+        tasks.process_project_document,
+        "apply_async",
+        lambda *, args, task_id: published.append((args, task_id)),
+    )
+
+    assert tasks.recover_stale_document_processing_task.run() == 1
+
+    document.refresh_from_db()
+    assert published == [((str(document.pk), 0), f"{document.pk}:process:0")]
+    assert document.processing_dispatch_attempts == 2
+    assert document.processing_dispatch_lease_expires_at > timezone.now()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_successful_document_publishes_keep_fifo_message_valid_without_claim(
+    tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.utils import timezone
+
+    from apps.ai_assistant.embedding import EmbeddingBatch
+    from apps.documents import processing, services, tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(email="document-backlog@example.com")
+    project = create_project(
+        actor=actor,
+        data={"name": "Document backlog", "project_type": "website"},
+    )
+    monkeypatch.setattr(services.transaction, "on_commit", lambda _callback: None)
+    document = services.upload_document(
+        project_id=project.pk,
+        actor=actor,
+        file=SimpleUploadedFile(
+            "backlog.txt", b"Delayed workers must still process this."
+        ),
+    )
+    Document.objects.filter(pk=document.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    publications = []
+    monkeypatch.setattr(
+        tasks.process_project_document,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+    for _ in range(7):
+        Document.objects.filter(pk=document.pk).update(
+            processing_dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert services.recover_stale_document_processing() == 1
+
+    document.refresh_from_db()
+    expected_message = (
+        (str(document.pk), 0),
+        f"{document.pk}:process:0",
+    )
+    assert document.processing_status == DocumentProcessingStatus.QUEUED
+    assert document.processing_generation == 0
+    assert document.processing_dispatch_attempts == 7
+    assert document.processing_dispatch_error_code == "worker_backlog"
+    assert publications == [expected_message] * 7
+
+    def broker_unavailable(*, args, task_id):
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(
+        tasks.process_project_document, "apply_async", broker_unavailable
+    )
+    for _ in range(5):
+        Document.objects.filter(pk=document.pk).update(
+            processing_dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert services.recover_stale_document_processing() == 0
+
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.QUEUED
+    assert document.processing_generation == 0
+    assert document.processing_dispatch_failures == 5
+
+    vector = [1.0, *([0.0] * 1535)]
+    monkeypatch.setattr(
+        processing,
+        "_embed_chunks",
+        lambda *, chunks, project_id: EmbeddingBatch(
+            vectors=[vector] * len(chunks),
+            profile_key="dispatch-backlog-test",
+            profile_version=1,
+            model_name="text-embedding-3-small",
+        ),
+    )
+    assert tasks.process_project_document.run(*publications[0][0]) == "ready"
+    assert tasks.process_project_document.run(*publications[-1][0]) == "ready"
+
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.READY
+    assert document.processing_generation == 1
+    assert document.processing_dispatch_error_code == ""
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ambiguous_document_publish_preserves_fifo_message_and_recovers(
+    tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.utils import timezone
+
+    from apps.ai_assistant.embedding import EmbeddingBatch
+    from apps.documents import processing, services, tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(
+        email="document-dispatch-failure@example.com"
+    )
+    project = create_project(
+        actor=actor,
+        data={"name": "Document dispatch failure", "project_type": "website"},
+    )
+    publish_calls = []
+
+    def broker_unavailable(*, args, task_id):
+        publish_calls.append((args, task_id))
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(
+        tasks.process_project_document, "apply_async", broker_unavailable
+    )
+    document = services.upload_document(
+        project_id=project.pk,
+        actor=actor,
+        file=SimpleUploadedFile("unavailable.txt", b"Retry a failed queue safely."),
+    )
+    Document.objects.filter(pk=document.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    for _ in range(4):
+        Document.objects.filter(pk=document.pk).update(
+            processing_dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert services.recover_stale_document_processing() == 0
+
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.QUEUED
+    assert document.processing_dispatch_attempts == 5
+    assert document.processing_dispatch_failures == 5
+    assert document.processing_dispatch_error_code == "queue_unavailable"
+    assert document.processing_generation == 0
+    assert len(publish_calls) == 5
+
+    vector = [1.0, *([0.0] * 1535)]
+    embedded = []
+
+    def fake_embed(*, chunks, project_id):
+        embedded.append((chunks, project_id))
+        return EmbeddingBatch(
+            vectors=[vector] * len(chunks),
+            profile_key="ambiguous-dispatch-test",
+            profile_version=1,
+            model_name="text-embedding-3-small",
+        )
+
+    monkeypatch.setattr(processing, "_embed_chunks", fake_embed)
+    assert tasks.process_project_document.run(*publish_calls[0][0]) == "ready"
+    assert tasks.process_project_document.run(*publish_calls[-1][0]) == "ready"
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.READY
+    assert document.processing_generation == 1
+    assert document.processing_dispatch_error_code == ""
+    assert len(embedded) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_document_success_marker_save_failure_preserves_accepted_fifo(
+    tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.utils import timezone
+
+    from apps.ai_assistant.embedding import EmbeddingBatch
+    from apps.documents import processing, services, tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(
+        email="document-marker-save@example.com"
+    )
+    project = create_project(
+        actor=actor,
+        data={"name": "Document accepted publish", "project_type": "website"},
+    )
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+    real_success_marker = services._record_document_dispatch_success
+    publications = []
+    monkeypatch.setattr(
+        tasks.process_project_document,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+
+    def fail_success_marker(**_kwargs):
+        raise RuntimeError("temporary marker write failure")
+
+    monkeypatch.setattr(
+        services, "_record_document_dispatch_success", fail_success_marker
+    )
+    document = services.upload_document(
+        project_id=project.pk,
+        actor=actor,
+        file=SimpleUploadedFile("accepted.txt", b"Accepted before marker save failed."),
+    )
+    assert len(publications) == 1
+    assert document.processing_dispatch_successful_at is None
+    Document.objects.filter(pk=document.pk).update(
+        created_at=timezone.now() - timedelta(days=1),
+        processing_dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(
+        services, "_record_document_dispatch_success", real_success_marker
+    )
+    assert services.recover_stale_document_processing() == 1
+
+    document.refresh_from_db()
+    assert document.processing_dispatch_successful_at is not None
+    assert document.processing_status == DocumentProcessingStatus.QUEUED
+    assert document.processing_generation == 0
+    assert publications == [
+        ((str(document.pk), 0), f"{document.pk}:process:0"),
+        ((str(document.pk), 0), f"{document.pk}:process:0"),
+    ]
+    vector = [1.0, *([0.0] * 1535)]
+    embedded = []
+
+    def fake_embed(*, chunks, project_id):
+        embedded.append((chunks, project_id))
+        return EmbeddingBatch(
+            vectors=[vector] * len(chunks),
+            profile_key="marker-save-test",
+            profile_version=1,
+            model_name="text-embedding-3-small",
+        )
+
+    monkeypatch.setattr(processing, "_embed_chunks", fake_embed)
+    assert tasks.process_project_document.run(*publications[0][0]) == "ready"
+    assert tasks.process_project_document.run(*publications[1][0]) == "ready"
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.READY
+    assert document.processing_generation == 1
+    assert len(embedded) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_beat_reclaims_expired_document_processing_lease(
+    tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+    from hashlib import sha256
+    from uuid import uuid4
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+    from django.utils import timezone
+
+    from apps.ai_assistant.embedding import EmbeddingBatch
+    from apps.documents import processing, tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.documents.services import recover_stale_document_processing
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(
+        email="processing-recovery@example.com"
+    )
+    project = create_project(
+        actor=actor,
+        data={"name": "Processing recovery", "project_type": "website"},
+    )
+    content = b"Recover this document after a worker exits."
+    storage_key = default_storage.save(
+        f"documents/{project.pk}/{uuid4()}", ContentFile(content)
+    )
+    document = Document.objects.create(
+        project=project,
+        uploaded_by=actor,
+        original_filename="recovery.txt",
+        mime_type="text/plain",
+        file_size=len(content),
+        checksum_sha256=sha256(content).hexdigest(),
+        storage_key=storage_key,
+    )
+
+    class WorkerTerminated(BaseException):
+        pass
+
+    real_embed_chunks = processing._embed_chunks
+
+    def worker_exits(*, chunks, project_id):
+        raise WorkerTerminated
+
+    monkeypatch.setattr(processing, "_embed_chunks", worker_exits)
+    with pytest.raises(WorkerTerminated):
+        processing.process_document(document_id=document.pk)
+
+    document.refresh_from_db()
+    old_generation = document.processing_generation
+    assert document.processing_status == DocumentProcessingStatus.PROCESSING
+    assert document.processing_lease_expires_at > timezone.now()
+    assert (
+        processing.process_document(document_id=document.pk).processing_generation
+        == old_generation
+    )
+
+    Document.objects.filter(pk=document.pk).update(
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    published = []
+    monkeypatch.setattr(
+        tasks.process_project_document,
+        "apply_async",
+        lambda *, args, task_id: published.append((args, task_id)),
+    )
+
+    assert recover_stale_document_processing() == 1
+    assert published == [
+        (
+            (str(document.pk), old_generation),
+            f"{document.pk}:process:{old_generation}",
+        )
+    ]
+    monkeypatch.setattr(processing, "_embed_chunks", real_embed_chunks)
+    monkeypatch.setattr(
+        processing,
+        "embed_texts",
+        lambda texts, **_kwargs: EmbeddingBatch(
+            vectors=[[1.0, *([0.0] * 1535)] for _ in texts],
+            profile_key="embed-recovery",
+            profile_version=1,
+            model_name="text-embedding-3-small",
+        ),
+    )
+    monkeypatch.setattr(
+        processing,
+        "get_embedding_input_byte_limit",
+        lambda **_kwargs: 200_000,
+    )
+
+    assert (
+        tasks.process_project_document.run(str(document.pk), old_generation) == "ready"
+    )
+
+    document.refresh_from_db()
+    assert document.processing_generation == old_generation + 1
+    assert document.processing_status == DocumentProcessingStatus.READY
+    assert document.processing_lease_expires_at is None
+
+
+@pytest.mark.parametrize("delayed_callback_kind", ["success", "failure"])
+@pytest.mark.django_db(transaction=True)
+def test_delayed_document_dispatch_callback_cannot_mutate_new_generation(
+    delayed_callback_kind, tmp_path, settings, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.utils import timezone
+
+    from apps.documents import processing, services, tasks
+    from apps.documents.models import Document, DocumentProcessingStatus
+    from apps.projects.services import create_project
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = get_user_model().objects.create_user(
+        email=f"delayed-{delayed_callback_kind}@example.com"
+    )
+    project = create_project(
+        actor=actor,
+        data={"name": "Delayed dispatch callback", "project_type": "website"},
+    )
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+
+    delayed_callbacks = []
+    defer_old_callback = True
+    record_success = services._record_document_dispatch_success
+    record_failure = services._record_document_dispatch_failure
+
+    def record_or_defer_success(**kwargs):
+        if defer_old_callback:
+            delayed_callbacks.append(("success", kwargs))
+            return
+        return record_success(**kwargs)
+
+    def record_or_defer_failure(**kwargs):
+        if defer_old_callback:
+            delayed_callbacks.append(("failure", kwargs))
+            return
+        return record_failure(**kwargs)
+
+    monkeypatch.setattr(
+        services, "_record_document_dispatch_success", record_or_defer_success
+    )
+    monkeypatch.setattr(
+        services, "_record_document_dispatch_failure", record_or_defer_failure
+    )
+
+    published = []
+
+    def publish_old_generation(*, args, task_id):
+        published.append((args, task_id))
+        if delayed_callback_kind == "failure":
+            # The broker accepted the message, but the publisher lost its reply.
+            raise ConnectionError("ambiguous broker response")
+
+    monkeypatch.setattr(
+        tasks.process_project_document, "apply_async", publish_old_generation
+    )
+    document = services.upload_document(
+        project_id=project.pk,
+        actor=actor,
+        file=SimpleUploadedFile("generation.txt", b"Generation fenced text."),
+    )
+    assert published == [((str(document.pk), 0), f"{document.pk}:process:0")]
+    assert len(delayed_callbacks) == 1
+    assert delayed_callbacks[0][0] == delayed_callback_kind
+
+    class WorkerTerminated(BaseException):
+        pass
+
+    def worker_exits(*, chunks, project_id):
+        raise WorkerTerminated
+
+    monkeypatch.setattr(processing, "_embed_chunks", worker_exits)
+    with pytest.raises(WorkerTerminated):
+        tasks.process_project_document.run(str(document.pk), 0)
+
+    document.refresh_from_db()
+    assert document.processing_status == DocumentProcessingStatus.PROCESSING
+    assert document.processing_generation == 1
+    Document.objects.filter(pk=document.pk).update(
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+
+    defer_old_callback = False
+
+    def publish_new_generation(*, args, task_id):
+        published.append((args, task_id))
+        if delayed_callback_kind == "success":
+            raise ConnectionError("new generation publish failed")
+
+    monkeypatch.setattr(
+        tasks.process_project_document, "apply_async", publish_new_generation
+    )
+    assert services.recover_stale_document_processing() == (
+        0 if delayed_callback_kind == "success" else 1
+    )
+    assert published == [
+        ((str(document.pk), 0), f"{document.pk}:process:0"),
+        ((str(document.pk), 1), f"{document.pk}:process:1"),
+    ]
+
+    document.refresh_from_db()
+    assert document.processing_generation == 1
+    assert document.processing_dispatch_attempts == 1
+    if delayed_callback_kind == "success":
+        assert document.processing_dispatch_failures == 1
+        assert document.processing_dispatch_successful_at is not None
+        successful_at = document.processing_dispatch_successful_at
+        dispatch_error_code = document.processing_dispatch_error_code
+        dispatch_lease = document.processing_dispatch_lease_expires_at
+    else:
+        assert document.processing_dispatch_failures == 0
+        assert document.processing_dispatch_successful_at is not None
+        dispatch_lease = document.processing_dispatch_lease_expires_at
+
+    callback_kind, callback_kwargs = delayed_callbacks[0]
+    assert callback_kwargs["attempt"] == 1
+    assert callback_kwargs["processing_generation"] == 0
+    assert published[0][1] != published[1][1]
+    if callback_kind == "success":
+        record_success(**callback_kwargs)
+    else:
+        record_failure(**callback_kwargs)
+
+    document.refresh_from_db()
+    assert document.processing_generation == 1
+    assert document.processing_dispatch_attempts == 1
+    assert document.processing_dispatch_lease_expires_at == dispatch_lease
+    if delayed_callback_kind == "success":
+        assert document.processing_dispatch_failures == 1
+        assert document.processing_dispatch_successful_at == successful_at
+        assert document.processing_dispatch_error_code == dispatch_error_code
+    else:
+        assert document.processing_dispatch_failures == 0
+        assert document.processing_dispatch_successful_at is not None

@@ -127,6 +127,9 @@ export function ProjectSpecificationPage() {
   const isDirty = draft !== specification.content;
   const previousGenerationFailed = generation?.status === 'failed';
   const previousGenerationSuperseded = generation?.status === 'superseded';
+  const generationDispatchUnavailable =
+    generation?.status === 'queued' &&
+    ['queue_unavailable', 'worker_backlog'].includes(generation.error_code);
 
   async function reloadLatest() {
     const result = await specificationQuery.refetch();
@@ -207,30 +210,40 @@ export function ProjectSpecificationPage() {
 
       {generation && (
         <section
-          className={`specification-generation specification-generation--${generation.status}`}
+          className={`specification-generation specification-generation--${generation.status}${
+            generationDispatchUnavailable ? ' specification-generation--delayed' : ''
+          }`}
           aria-live="polite"
         >
           <strong>
-            {isGenerating
-              ? generation.status === 'queued'
-                ? 'Waiting for generation to start'
-                : 'Generating specification'
-              : generation.status === 'failed'
-                ? 'Generation failed'
-                : generation.status === 'superseded'
-                  ? 'Generation discarded'
-                  : generation.status === 'succeeded'
-                    ? 'Latest generation completed'
-                    : 'Specification generation'}
+            {generationDispatchUnavailable
+              ? 'Generation has not started'
+              : isGenerating
+                ? generation.status === 'queued'
+                  ? 'Waiting for generation to start'
+                  : 'Generating specification'
+                : generation.status === 'failed'
+                  ? 'Generation failed'
+                  : generation.status === 'superseded'
+                    ? 'Generation discarded'
+                    : generation.status === 'succeeded'
+                      ? 'Latest generation completed'
+                      : 'Specification generation'}
           </strong>
           <span>
-            {generation.status === 'failed'
-              ? generationFailureMessage(generation.error_code)
-              : generation.status === 'superseded'
-                ? generation.error_code === 'sources_changed'
-                  ? 'Project sources changed while generation was queued or running. Start a new generation to use the latest sources.'
-                  : 'The current draft changed during generation, so its result was discarded.'
-                : `Started ${formatDate(generation.started_at ?? generation.created_at)}.`}
+            {generationDispatchUnavailable
+              ? 'This generation is waiting for processing. The system will keep retrying; the current draft is unchanged.'
+              : generation.status === 'queued'
+                ? `Request queued ${formatDate(generation.created_at)}. Waiting for a worker.`
+                : generation.status === 'failed'
+                  ? generationFailureMessage(generation.error_code)
+                  : generation.status === 'superseded'
+                    ? generation.error_code === 'sources_changed'
+                      ? 'Project sources changed while generation was queued or running. Start a new generation to use the latest sources.'
+                      : 'The current draft changed during generation, so its result was discarded.'
+                    : generation.status === 'running'
+                      ? `Started ${formatDate(generation.started_at)}.`
+                      : `Completed ${formatDate(generation.completed_at)}.`}
           </span>
         </section>
       )}

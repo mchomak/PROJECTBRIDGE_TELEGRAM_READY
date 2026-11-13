@@ -115,8 +115,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.documents.tasks.process_expired_document_deletions",
         "schedule": 300.0,
     },
+    "document-processing-dispatch-recovery": {
+        "task": "apps.documents.tasks.recover_stale_document_processing_task",
+        "schedule": 60.0,
+    },
     "specification-generation-dispatch-recovery": {
         "task": "apps.specifications.tasks.recover_stale_specification_generations",
+        "schedule": 60.0,
+    },
+    "ai-analysis-dispatch-recovery": {
+        "task": "apps.ai_assistant.tasks.recover_stale_analysis_dispatches_task",
         "schedule": 60.0,
     },
 }

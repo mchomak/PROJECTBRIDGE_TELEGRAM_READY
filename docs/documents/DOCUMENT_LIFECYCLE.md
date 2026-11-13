@@ -1,7 +1,7 @@
 # Document Storage and Lifecycle
 
 **Status:** Shared visibility and mutual-consent lifecycle agreed  
-**Last updated:** 2026-11-12
+**Last updated:** 2026-11-13
 
 ## 1. Scope
 
@@ -84,6 +84,29 @@ limits are processing safeguards, not changes to the 20 MiB upload
 limit.
 
 The frontend reads document processing status through the document API.
+
+The upload transaction commits document metadata and the storage key before
+the Celery task is published. A broker failure after commit leaves the
+database row and uploaded file intact. A Beat sweep runs every 60 seconds and
+recovers queued documents older than one minute using a row-locked two-minute
+dispatch lease. A publish exception is ambiguous because the broker can accept
+the message before the publisher sees a connection error. Retry frequency uses
+exponential backoff from 30 seconds to 30 minutes with a stored exception-count
+cap of 12; after five exceptions the
+document API exposes `processing_dispatch_error_code=queue_unavailable` while
+`processing_status` remains `queued`. Beat continues recovery automatically
+without manual database edits. After five dispatch reservations without a
+worker claim, the API exposes `processing_dispatch_error_code=worker_backlog`;
+it is also nonterminal and clears on worker claim. In both cases, user-facing
+copy says processing is waiting and retries continue without asserting that an
+ambiguous publish was accepted. The same generation-scoped task ID stays valid
+until a worker claims it. Dispatch attempts never advance the processing
+generation; only a worker claim does. Each processing attempt has a six-minute
+lease, longer than its four-minute hard task limit. The sweep also requeues
+expired or legacy processing rows with no lease. It only processes active or
+archived documents, so lifecycle rules continue to govern RAG eligibility.
+Stable generation-scoped task IDs and generation fencing prevent stale or
+duplicate workers from replacing newer chunks or embeddings.
 
 ## 5. RAG eligibility
 

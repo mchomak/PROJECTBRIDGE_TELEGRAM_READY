@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "C:/Users/McHomak/.agents/skills/autopilot",
   "startedAt": "2026-11-13T03:00:44+03:00",
-  "updatedAt": "2026-11-13T17:38:20+03:00",
+  "updatedAt": "2026-11-13T18:00:48+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -157,7 +157,7 @@ window.STATE =
       ],
       "wave": 4,
       "zone": [],
-      "status": "review",
+      "status": "done",
       "startedAt": "2026-11-13T15:50:28+03:00",
       "repairs": 0,
       "handoffs": 0,
@@ -167,7 +167,9 @@ window.STATE =
       },
       "concerns": [
         "No paid provider calls; recovery may fail after five unclaimed dispatches."
-      ]
+      ],
+      "finishedAt": "2026-11-13T17:38:43+03:00",
+      "commit": "bc8039c"
     },
     {
       "id": "13",
@@ -180,10 +182,10 @@ window.STATE =
       ],
       "wave": 5,
       "zone": [],
-      "status": "pending",
-      "startedAt": null,
+      "status": "in-progress",
+      "startedAt": "2026-11-13T17:38:43+03:00",
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 1
     }
   ],
   "tests": null,

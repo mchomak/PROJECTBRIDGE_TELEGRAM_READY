@@ -1,7 +1,10 @@
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from celery.exceptions import Retry
 from django.contrib.auth import get_user_model
+from django.db import OperationalError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -51,7 +54,6 @@ def test_executor_gets_durable_queue_id_and_customers_cannot_read_ai_history(
 
     monkeypatch.setattr(tasks.analyze_project, "apply_async", fake_enqueue)
     monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
-
     response = client.post(
         f"/api/v1/projects/{project.pk}/ai/analyses/",
         {},
@@ -92,6 +94,315 @@ def test_executor_gets_durable_queue_id_and_customers_cannot_read_ai_history(
     assert hidden_detail.status_code == 403
     assert AIAnalysisRequest.objects.filter(project=project).count() == 1
     assert len(enqueued) == 1
+
+
+@pytest.mark.django_db
+def test_beat_recovers_analysis_dispatch_lost_after_commit(monkeypatch):
+    from apps.ai_assistant import services, tasks
+
+    executor = get_user_model().objects.create_user(
+        email="analysis-recovery@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Analysis recovery", "project_type": "other"},
+    )
+    client = APIClient()
+    client.force_authenticate(user=executor)
+    monkeypatch.setattr(services.transaction, "on_commit", lambda _callback: None)
+
+    response = client.post(
+        f"/api/v1/projects/{project.pk}/ai/analyses/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+
+    assert response.status_code == 202
+    request = AIAnalysisRequest.objects.get(pk=response.data["id"])
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+    assert request.dispatch_attempts == 0
+    AIAnalysisRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+    dispatched = []
+    monkeypatch.setattr(
+        tasks.analyze_project,
+        "apply_async",
+        lambda *, args, task_id: dispatched.append((args, task_id)),
+    )
+
+    assert tasks.recover_stale_analysis_dispatches_task.run() == 1
+
+    request.refresh_from_db()
+    assert dispatched == [((str(request.pk),), str(request.celery_task_id))]
+    assert request.dispatch_attempts == 1
+    assert request.dispatch_lease_expires_at > timezone.now()
+
+
+@pytest.mark.django_db
+def test_successful_analysis_publishes_do_not_fence_a_delayed_worker(monkeypatch):
+    from apps.ai_assistant import services, tasks
+
+    executor = get_user_model().objects.create_user(
+        email="analysis-backlog@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Analysis backlog", "project_type": "other"},
+    )
+    client = APIClient()
+    client.force_authenticate(user=executor)
+    monkeypatch.setattr(services.transaction, "on_commit", lambda _callback: None)
+    response = client.post(
+        f"/api/v1/projects/{project.pk}/ai/analyses/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    request = AIAnalysisRequest.objects.get(pk=response.data["id"])
+    AIAnalysisRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    publications = []
+    monkeypatch.setattr(
+        tasks.analyze_project,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+    for _ in range(7):
+        AIAnalysisRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_analysis_dispatches_task.run() == 1
+
+    request.refresh_from_db()
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+    assert request.dispatch_attempts == 7
+    assert request.error_code == "worker_backlog"
+    assert publications == [((str(request.pk),), str(request.celery_task_id))] * 7
+
+    def broker_unavailable(*, args, task_id):
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(tasks.analyze_project, "apply_async", broker_unavailable)
+    for _ in range(5):
+        AIAnalysisRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_analysis_dispatches_task.run() == 0
+
+    request.refresh_from_db()
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+    assert request.execution_generation == 0
+    assert request.dispatch_failures == 5
+
+    monkeypatch.setattr(tasks, "run_project_analysis", lambda **_kwargs: None)
+    assert tasks.analyze_project.run(*publications[0][0]) == "superseded"
+    request.refresh_from_db()
+    assert request.status == AIAnalysisRequestStatus.RUNNING
+    assert request.execution_generation == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_beat_recovery_dispatches_analysis_once(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+
+    from django.conf import settings
+    from django.db import close_old_connections
+
+    from apps.ai_assistant import services, tasks
+
+    executor = get_user_model().objects.create_user(
+        email="analysis-concurrent-recovery@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Concurrent analysis recovery", "project_type": "other"},
+    )
+    client = APIClient()
+    client.force_authenticate(user=executor)
+    monkeypatch.setattr(services.transaction, "on_commit", lambda _callback: None)
+    response = client.post(
+        f"/api/v1/projects/{project.pk}/ai/analyses/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    request = AIAnalysisRequest.objects.get(pk=response.data["id"])
+    AIAnalysisRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    candidate_barrier = Barrier(2)
+    dispatch_lock = Lock()
+    dispatched = []
+    real_candidates = services._stale_analysis_dispatch_candidates
+
+    def synchronized_candidates():
+        candidates = real_candidates()
+        candidate_barrier.wait(timeout=10)
+        return candidates
+
+    def fake_apply_async(*, args, task_id):
+        with dispatch_lock:
+            dispatched.append((args, task_id))
+
+    monkeypatch.setattr(
+        services,
+        "_stale_analysis_dispatch_candidates",
+        synchronized_candidates,
+    )
+    monkeypatch.setattr(tasks.analyze_project, "apply_async", fake_apply_async)
+
+    def recover():
+        close_old_connections()
+        try:
+            return tasks.recover_stale_analysis_dispatches_task.run()
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(recover) for _ in range(2)]
+        results = [future.result(timeout=15) for future in futures]
+
+    request.refresh_from_db()
+    assert sorted(results) == [0, 1]
+    assert dispatched == [((str(request.pk),), str(request.celery_task_id))]
+    assert request.dispatch_attempts == 1
+    assert request.dispatch_lease_expires_at > timezone.now()
+    assert (
+        settings.CELERY_BEAT_SCHEDULE["ai-analysis-dispatch-recovery"]["task"]
+        == "apps.ai_assistant.tasks.recover_stale_analysis_dispatches_task"
+    )
+
+
+@pytest.mark.django_db
+def test_ambiguous_analysis_publish_keeps_fifo_message_and_recovers(monkeypatch):
+    from apps.ai_assistant import services, tasks
+
+    executor = get_user_model().objects.create_user(
+        email="analysis-exhaustion@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Analysis dispatch exhaustion", "project_type": "other"},
+    )
+    client = APIClient()
+    client.force_authenticate(user=executor)
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+    publish_calls = []
+
+    def broker_unavailable(*, args, task_id):
+        publish_calls.append((args, task_id))
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(tasks.analyze_project, "apply_async", broker_unavailable)
+    response = client.post(
+        f"/api/v1/projects/{project.pk}/ai/analyses/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    request = AIAnalysisRequest.objects.get(pk=response.data["id"])
+    assert response.status_code == 202
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+
+    for _attempt in range(4):
+        AIAnalysisRequest.objects.filter(pk=request.pk).update(
+            created_at=timezone.now() - timedelta(days=1),
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        assert tasks.recover_stale_analysis_dispatches_task.run() == 0
+
+    request.refresh_from_db()
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+    assert request.error_code == "queue_unavailable"
+    assert request.dispatch_attempts == 5
+    assert len(publish_calls) == 5
+    assert request.execution_generation == 0
+
+    executions = []
+    monkeypatch.setattr(
+        tasks, "run_project_analysis", lambda **kwargs: executions.append(kwargs)
+    )
+    assert tasks.analyze_project.run(*publish_calls[0][0]) == "superseded"
+    request.refresh_from_db()
+    assert request.status == AIAnalysisRequestStatus.RUNNING
+    assert request.execution_generation == 1
+    assert request.error_code == ""
+    assert len(executions) == 1
+    with pytest.raises(Retry):
+        tasks.analyze_project.run(*publish_calls[1][0])
+    assert len(executions) == 1
+
+
+@pytest.mark.django_db
+def test_analysis_success_marker_save_failure_preserves_accepted_fifo(monkeypatch):
+    from apps.ai_assistant import services, tasks
+
+    executor = get_user_model().objects.create_user(
+        email="analysis-marker-save@example.com"
+    )
+    project = create_project(
+        actor=executor,
+        data={"name": "Analysis accepted publish", "project_type": "other"},
+    )
+    client = APIClient()
+    client.force_authenticate(user=executor)
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+    real_success_marker = services._record_analysis_dispatch_success
+    publications = []
+    monkeypatch.setattr(
+        tasks.analyze_project,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+
+    def fail_success_marker(**_kwargs):
+        raise OperationalError("temporary marker write failure")
+
+    monkeypatch.setattr(
+        services, "_record_analysis_dispatch_success", fail_success_marker
+    )
+    response = client.post(
+        f"/api/v1/projects/{project.pk}/ai/analyses/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    request = AIAnalysisRequest.objects.get(pk=response.data["id"])
+    assert response.status_code == 202
+    assert len(publications) == 1
+    assert request.dispatch_successful_at is None
+
+    AIAnalysisRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1),
+        dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(
+        services, "_record_analysis_dispatch_success", real_success_marker
+    )
+    assert tasks.recover_stale_analysis_dispatches_task.run() == 1
+
+    request.refresh_from_db()
+    assert request.dispatch_successful_at is not None
+    assert request.status == AIAnalysisRequestStatus.QUEUED
+    assert request.execution_generation == 0
+    assert publications == [
+        ((str(request.pk),), str(request.celery_task_id)),
+        ((str(request.pk),), str(request.celery_task_id)),
+    ]
+    executions = []
+    monkeypatch.setattr(
+        tasks, "run_project_analysis", lambda **kwargs: executions.append(kwargs)
+    )
+    assert tasks.analyze_project.run(*publications[0][0]) == "superseded"
+    with pytest.raises(Retry):
+        tasks.analyze_project.run(*publications[1][0])
+    assert len(executions) == 1
 
 
 @pytest.mark.django_db
@@ -152,7 +463,9 @@ def test_inactive_executor_membership_cannot_start_analysis(membership_status):
 
 
 @pytest.mark.django_db
-def test_queue_failure_is_visible_as_durable_failed_request(monkeypatch):
+def test_queue_failure_keeps_durable_request_retryable_without_leaking_error(
+    monkeypatch,
+):
     executor = get_user_model().objects.create_user(email="queue-failure@example.com")
     project = create_project(
         actor=executor, data={"name": "Queue failure", "project_type": "other"}
@@ -177,8 +490,9 @@ def test_queue_failure_is_visible_as_durable_failed_request(monkeypatch):
 
     assert response.status_code == 202
     queued = AIAnalysisRequest.objects.get(pk=response.data["id"])
-    assert queued.status == AIAnalysisRequestStatus.FAILED
-    assert queued.error_code == "queue_unavailable"
+    assert queued.status == AIAnalysisRequestStatus.QUEUED
+    assert queued.dispatch_attempts == 1
+    assert queued.dispatch_lease_expires_at > timezone.now()
     assert "broker detail" not in str(response.data)
 
 

@@ -93,6 +93,7 @@ function specificationFetch({
   generationStatus,
   generationError = '',
   completeAfterPoll = false,
+  recoverDispatchWarning = false,
 }: {
   projectStatus?: string;
   staleSave?: boolean;
@@ -101,8 +102,10 @@ function specificationFetch({
   generationStatus?: string;
   generationError?: string;
   completeAfterPoll?: boolean;
+  recoverDispatchWarning?: boolean;
 } = {}) {
   let currentProjectStatus = projectStatus;
+  let specificationPolls = 0;
   let specification = specificationRecord(
     '# Current draft',
     1,
@@ -132,6 +135,22 @@ function specificationFetch({
       ]);
     }
     if (url === `/api/v1/projects/${projectId}/specification/` && method === 'GET') {
+      specificationPolls += 1;
+      const currentGeneration = specification.generation;
+      if (
+        recoverDispatchWarning &&
+        specificationPolls > 1 &&
+        currentGeneration !== null &&
+        typeof currentGeneration === 'object' &&
+        'error_code' in currentGeneration &&
+        typeof currentGeneration.error_code === 'string' &&
+        ['queue_unavailable', 'worker_backlog'].includes(currentGeneration.error_code)
+      ) {
+        specification = {
+          ...specification,
+          generation: generationRecord('queued'),
+        };
+      }
       if (generationStarted) {
         generationPolls += 1;
         specification =
@@ -249,6 +268,30 @@ test('executor can queue async generation and sees the polling state', async () 
     /^[0-9a-f-]{36}$/i,
   );
 });
+
+test.each(['queue_unavailable', 'worker_backlog'])(
+  'queued generation explains that no worker has started for %s and clears the warning after recovery',
+  async (warningCode) => {
+    const fetchMock = specificationFetch({
+      generationStatus: 'queued',
+      generationError: warningCode,
+      recoverDispatchWarning: true,
+    });
+    renderPage(fetchMock, executor);
+
+    expect(await screen.findByText('Generation has not started')).toBeTruthy();
+    const warning =
+      'This generation is waiting for processing. The system will keep retrying; the current draft is unchanged.';
+    expect(await screen.findByText(warning)).toBeTruthy();
+    await waitFor(
+      () => {
+        expect(screen.queryByText(warning)).toBeNull();
+        expect(screen.getByText('Waiting for generation to start')).toBeTruthy();
+      },
+      { timeout: 5_000 },
+    );
+  },
+);
 
 test('executor sees generated content after polling completes without reloading', async () => {
   const fetchMock = specificationFetch({ completeAfterPoll: true });

@@ -44,12 +44,13 @@ function requestRecord(
   status = 'succeeded',
   resultCount = 3,
   id = '22222222-2222-4222-8222-222222222222',
+  errorCode = '',
 ) {
   return {
     id,
     status,
     result_count: resultCount,
-    error_code: '',
+    error_code: errorCode,
     created_at: '2026-11-12T12:00:00Z',
     started_at: '2026-11-12T12:00:01Z',
     completed_at: '2026-11-12T12:00:04Z',
@@ -116,7 +117,12 @@ function renderPage(fetchMock: ReturnType<typeof vi.fn>, pageUser: User) {
   );
 }
 
-function workspaceFetch({ completeWithNewProposal = false, completeOnFirstPoll = false } = {}) {
+function workspaceFetch({
+  completeWithNewProposal = false,
+  completeOnFirstPoll = false,
+  queueWarningThenRecover = false,
+  queueWarningCode = 'worker_backlog',
+} = {}) {
   const proposalStatuses = new Map<string, string>();
   let currentRequest = requestRecord();
   let analysisStarted = false;
@@ -144,7 +150,17 @@ function workspaceFetch({ completeWithNewProposal = false, completeOnFirstPoll =
       ]);
     }
     if (url.startsWith(`/api/v1/projects/${projectId}/ai/analyses/`) && method === 'GET') {
-      if (completeWithNewProposal && analysisStarted && currentRequest.status !== 'succeeded') {
+      if (queueWarningThenRecover && analysisStarted && currentRequest.status !== 'running') {
+        analysisPollCount += 1;
+        currentRequest =
+          analysisPollCount === 1
+            ? requestRecord('queued', 0, '22222222-2222-4222-8222-222222222223', queueWarningCode)
+            : requestRecord('running', 0, '22222222-2222-4222-8222-222222222223');
+      } else if (
+        completeWithNewProposal &&
+        analysisStarted &&
+        currentRequest.status !== 'succeeded'
+      ) {
         analysisPollCount += 1;
         if (completeOnFirstPoll && analysisPollCount === 1) {
           currentRequest = requestRecord('succeeded', 4, '22222222-2222-4222-8222-222222222223');
@@ -276,6 +292,32 @@ test('proposal inbox refreshes when a polled analysis request succeeds', async (
     ).length,
   ).toBeGreaterThan(1);
 }, 12_000);
+
+test.each(['queue_unavailable', 'worker_backlog'])(
+  'queued analysis explains that work has not started for %s and clears the warning after recovery',
+  async (warningCode) => {
+    const fetchMock = workspaceFetch({
+      queueWarningThenRecover: true,
+      queueWarningCode: warningCode,
+    });
+    renderPage(fetchMock, executor);
+
+    expect(await screen.findByRole('heading', { name: 'AI analysis and proposals' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze project' }));
+
+    const warning =
+      'This analysis is waiting for processing. The system will keep retrying; it has not started yet.';
+    expect(await screen.findByText(warning, {}, { timeout: 6_000 })).toBeTruthy();
+    await waitFor(
+      () => {
+        expect(screen.queryByText(warning)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Analysis in progress' })).toBeTruthy();
+      },
+      { timeout: 6_000 },
+    );
+  },
+  12_000,
+);
 
 test('proposal inbox refreshes when the first poll already reports success', async () => {
   const fetchMock = workspaceFetch({

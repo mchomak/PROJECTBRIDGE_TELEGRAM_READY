@@ -18,6 +18,7 @@ function makeDocument(overrides: Partial<ProjectDocument> = {}): ProjectDocument
     checksum_sha256: 'd'.repeat(64),
     lifecycle_status: 'active',
     processing_status: 'queued',
+    processing_dispatch_error_code: '',
     created_at: '2026-11-12T12:00:00Z',
     archived_at: null,
     deleted_at: null,
@@ -190,6 +191,43 @@ test('validates file extension and retains a failed upload for retry with progre
   expect(await screen.findAllByText('Queued · not searchable')).toHaveLength(2);
   expect(await screen.findByText('scope.md')).toBeTruthy();
 });
+
+test.each(['queue_unavailable', 'worker_backlog'])(
+  'queued documents explain %s dispatch delay and clear the warning after recovery',
+  async (warningCode) => {
+    setCsrfCookie();
+    let documentReads = 0;
+    const delayed = makeDocument({
+      processing_status: 'queued',
+      processing_dispatch_error_code: warningCode,
+    });
+    const ready = makeDocument({
+      processing_status: 'ready',
+      processing_dispatch_error_code: '',
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/csrf/') return jsonResponse({ csrf_token: 'csrf-token-value' });
+      if (path.startsWith(`/api/v1/projects/${projectId}/documents/`)) {
+        documentReads += 1;
+        const document = documentReads === 1 ? delayed : ready;
+        return jsonResponse({ count: 1, next: null, previous: null, results: [document] });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPanel();
+    const warning =
+      'The upload is saved and waiting for processing. The system will keep retrying; processing has not started.';
+    expect(await screen.findByText(warning)).toBeTruthy();
+    expect(screen.getByText('Waiting for processing · retrying')).toBeTruthy();
+    expect(await screen.findByText('Ready to search', {}, { timeout: 6_000 })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(warning)).toBeNull());
+    expect(documentReads).toBeGreaterThan(1);
+  },
+  8_000,
+);
 
 test('archive request explains both-party consent and keeps a retry after a temporary failure', async () => {
   setCsrfCookie();

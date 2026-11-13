@@ -7,6 +7,7 @@ from .services import (
     claim_analysis_request,
     complete_analysis_request,
     fail_analysis_request,
+    recover_stale_analysis_dispatches,
 )
 
 
@@ -49,3 +50,8 @@ def analyze_project(self, request_id: str) -> str:
             error=error,
         )
         return "failed"
+
+
+@shared_task
+def recover_stale_analysis_dispatches_task() -> int:
+    return recover_stale_analysis_dispatches()

@@ -67,6 +67,12 @@ class Document(models.Model):
         choices=DocumentProcessingStatus.choices,
         default=DocumentProcessingStatus.QUEUED,
     )
+    processing_dispatch_error_code = models.CharField(max_length=64, blank=True)
+    processing_dispatch_attempts = models.PositiveIntegerField(default=0)
+    processing_dispatch_failures = models.PositiveSmallIntegerField(default=0)
+    processing_dispatch_successful_at = models.DateTimeField(blank=True, null=True)
+    processing_dispatch_lease_expires_at = models.DateTimeField(blank=True, null=True)
+    processing_lease_expires_at = models.DateTimeField(blank=True, null=True)
     processing_generation = models.PositiveIntegerField(default=0, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     archived_at = models.DateTimeField(blank=True, null=True)

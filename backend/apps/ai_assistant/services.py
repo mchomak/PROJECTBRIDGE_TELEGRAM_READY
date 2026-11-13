@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.project_state.selectors import get_project_member_role
@@ -36,6 +37,14 @@ from .models import (
 )
 
 ANALYSIS_LEASE = timedelta(minutes=6)
+ANALYSIS_DISPATCH_STALE_AFTER = timedelta(minutes=1)
+ANALYSIS_DISPATCH_LEASE = timedelta(minutes=2)
+ANALYSIS_DISPATCH_RETRY_BASE = timedelta(seconds=30)
+ANALYSIS_DISPATCH_RETRY_MAX = timedelta(minutes=30)
+ANALYSIS_DISPATCH_UNAVAILABLE_AFTER = 5
+ANALYSIS_DISPATCH_BACKLOG_WARNING_AFTER = 5
+MAX_ANALYSIS_DISPATCH_FAILURES = 12
+ANALYSIS_DISPATCH_BATCH_SIZE = 100
 ERROR_CODE_PATTERN = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
@@ -95,19 +104,177 @@ def queue_manual_analysis(*, project_id, actor, idempotency_key):
     return analysis_request
 
 
-def _enqueue_analysis(*, request_id, task_id, task):
+def _enqueue_analysis(*, request_id, task_id, task, require_stale=False):
+    attempt = None
     try:
+        attempt = _reserve_analysis_dispatch(
+            request_id=request_id,
+            task_id=task_id,
+            require_stale=require_stale,
+        )
+        if attempt is None:
+            return False
         task.apply_async(args=(request_id,), task_id=task_id)
     except Exception:
-        AIAnalysisRequest.objects.filter(
-            pk=request_id,
-            celery_task_id=task_id,
-            status=AIAnalysisRequestStatus.QUEUED,
-        ).update(
-            status=AIAnalysisRequestStatus.FAILED,
-            error_code="queue_unavailable",
-            completed_at=timezone.now(),
+        if attempt is not None:
+            try:
+                _record_analysis_dispatch_failure(
+                    request_id=request_id,
+                    task_id=task_id,
+                    attempt=attempt,
+                )
+            except Exception:
+                # The dispatch lease expires and Beat will retry the durable request.
+                pass
+        return False
+    try:
+        _record_analysis_dispatch_success(
+            request_id=request_id,
+            task_id=task_id,
+            attempt=attempt,
         )
+    except Exception:
+        # The successful broker publish remains recoverable when its marker write fails.
+        pass
+    return True
+
+
+def _reserve_analysis_dispatch(*, request_id, task_id, require_stale=False):
+    now = timezone.now()
+    with transaction.atomic():
+        request = (
+            AIAnalysisRequest.objects.select_for_update()
+            .filter(pk=request_id, celery_task_id=task_id)
+            .first()
+        )
+        if request is None or request.status != AIAnalysisRequestStatus.QUEUED:
+            return None
+        if require_stale and request.created_at > now - ANALYSIS_DISPATCH_STALE_AFTER:
+            return None
+        if (
+            request.dispatch_lease_expires_at is not None
+            and request.dispatch_lease_expires_at > now
+        ):
+            return None
+        if (
+            request.dispatch_successful_at is None
+            and request.dispatch_attempts > request.dispatch_failures
+        ):
+            # An expired reservation without a recorded broker error is ambiguous.
+            request.dispatch_successful_at = now
+            if request.dispatch_attempts >= ANALYSIS_DISPATCH_BACKLOG_WARNING_AFTER:
+                request.error_code = "worker_backlog"
+        request.dispatch_attempts += 1
+        request.dispatch_lease_expires_at = now + ANALYSIS_DISPATCH_LEASE
+        request.save(
+            update_fields=(
+                "dispatch_attempts",
+                "dispatch_lease_expires_at",
+                "dispatch_successful_at",
+                "error_code",
+            )
+        )
+        return request.dispatch_attempts
+
+
+def _record_analysis_dispatch_success(*, request_id, task_id, attempt):
+    with transaction.atomic():
+        request = (
+            AIAnalysisRequest.objects.select_for_update()
+            .filter(
+                pk=request_id,
+                celery_task_id=task_id,
+                status=AIAnalysisRequestStatus.QUEUED,
+                dispatch_attempts=attempt,
+            )
+            .first()
+        )
+        if request is None:
+            return
+        fields = []
+        if request.dispatch_successful_at is None:
+            request.dispatch_successful_at = timezone.now()
+            fields.append("dispatch_successful_at")
+        if request.dispatch_failures:
+            request.dispatch_failures = 0
+            fields.append("dispatch_failures")
+        if request.dispatch_attempts >= ANALYSIS_DISPATCH_BACKLOG_WARNING_AFTER:
+            request.error_code = "worker_backlog"
+            fields.append("error_code")
+        elif request.error_code in {"queue_unavailable", "worker_backlog"}:
+            request.error_code = ""
+            fields.append("error_code")
+        if fields:
+            request.save(update_fields=tuple(fields))
+
+
+def _record_analysis_dispatch_failure(*, request_id, task_id, attempt):
+    now = timezone.now()
+    with transaction.atomic():
+        request = (
+            AIAnalysisRequest.objects.select_for_update()
+            .filter(
+                pk=request_id,
+                celery_task_id=task_id,
+                status=AIAnalysisRequestStatus.QUEUED,
+                dispatch_attempts=attempt,
+            )
+            .first()
+        )
+        if request is None:
+            return
+        request.dispatch_failures = min(
+            MAX_ANALYSIS_DISPATCH_FAILURES, request.dispatch_failures + 1
+        )
+        if request.dispatch_failures >= ANALYSIS_DISPATCH_UNAVAILABLE_AFTER:
+            request.error_code = "queue_unavailable"
+        delay = _analysis_dispatch_retry_delay(request.dispatch_failures)
+        request.dispatch_lease_expires_at = now + delay
+        request.save(
+            update_fields=(
+                "error_code",
+                "dispatch_failures",
+                "dispatch_lease_expires_at",
+            )
+        )
+
+
+def _analysis_dispatch_retry_delay(failures):
+    multiplier = 2 ** max(0, min(failures - 1, 10))
+    return min(ANALYSIS_DISPATCH_RETRY_BASE * multiplier, ANALYSIS_DISPATCH_RETRY_MAX)
+
+
+def _stale_analysis_dispatch_candidates(*, now=None):
+    now = now or timezone.now()
+    stale_before = now - ANALYSIS_DISPATCH_STALE_AFTER
+    return list(
+        AIAnalysisRequest.objects.filter(
+            status=AIAnalysisRequestStatus.QUEUED,
+            created_at__lte=stale_before,
+        )
+        .filter(
+            Q(dispatch_lease_expires_at__isnull=True)
+            | Q(dispatch_lease_expires_at__lte=now)
+        )
+        .order_by("created_at", "id")
+        .values_list("id", "celery_task_id")[:ANALYSIS_DISPATCH_BATCH_SIZE]
+    )
+
+
+def recover_stale_analysis_dispatches():
+    candidates = _stale_analysis_dispatch_candidates()
+    from .tasks import analyze_project
+
+    dispatched = 0
+    for request_id, task_id in candidates:
+        if _enqueue_analysis(
+            request_id=str(request_id),
+            task_id=str(task_id),
+            task=analyze_project,
+            require_stale=True,
+        ):
+            dispatched += 1
+    return dispatched
 
 
 def claim_analysis_request(*, request_id):
@@ -130,12 +297,14 @@ def claim_analysis_request(*, request_id):
             request.error_code = "project_read_only"
             request.completed_at = now
             request.lease_expires_at = None
+            request.dispatch_lease_expires_at = None
             request.save(
                 update_fields=(
                     "status",
                     "error_code",
                     "completed_at",
                     "lease_expires_at",
+                    "dispatch_lease_expires_at",
                 )
             )
             return request.status, request.execution_generation, 0
@@ -149,16 +318,24 @@ def claim_analysis_request(*, request_id):
             )
             return "busy", request.execution_generation, seconds_left
         request.status = AIAnalysisRequestStatus.RUNNING
+        request.dispatch_attempts = 0
+        request.dispatch_failures = 0
         request.execution_generation += 1
         request.lease_expires_at = now + ANALYSIS_LEASE
+        request.dispatch_lease_expires_at = None
+        request.dispatch_successful_at = None
         if request.started_at is None:
             request.started_at = now
         request.error_code = ""
         request.save(
             update_fields=(
                 "status",
+                "dispatch_attempts",
                 "execution_generation",
                 "lease_expires_at",
+                "dispatch_lease_expires_at",
+                "dispatch_successful_at",
+                "dispatch_failures",
                 "started_at",
                 "error_code",
             )
@@ -190,8 +367,15 @@ def fail_analysis_request(*, request_id, generation, error):
         request.error_code = _safe_error_code(error)
         request.completed_at = timezone.now()
         request.lease_expires_at = None
+        request.dispatch_lease_expires_at = None
         request.save(
-            update_fields=("status", "error_code", "completed_at", "lease_expires_at")
+            update_fields=(
+                "status",
+                "error_code",
+                "completed_at",
+                "lease_expires_at",
+                "dispatch_lease_expires_at",
+            )
         )
     return True
 
@@ -269,6 +453,7 @@ def complete_analysis_request(
         request.result_count = proposal_count
         request.completed_at = timezone.now()
         request.lease_expires_at = None
+        request.dispatch_lease_expires_at = None
         request.save(
             update_fields=(
                 "run",
@@ -276,6 +461,7 @@ def complete_analysis_request(
                 "result_count",
                 "completed_at",
                 "lease_expires_at",
+                "dispatch_lease_expires_at",
             )
         )
     return True

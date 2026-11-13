@@ -1,7 +1,9 @@
 import logging
+from datetime import timedelta
 
 from django.core.files.storage import default_storage
 from django.db import transaction
+from django.utils import timezone
 
 from apps.ai_assistant.embedding import (
     EMBEDDING_MAX_BATCH_SIZE,
@@ -29,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingSpaceChangedError(Exception):
     """Sub-batch replies cannot be stored together in different vector spaces."""
+
+
+DOCUMENT_PROCESSING_LEASE = timedelta(minutes=6)
 
 
 def _embed_chunks(*, chunks, project_id):
@@ -93,7 +98,8 @@ def _embed_chunks(*, chunks, project_id):
     )
 
 
-def _claim_document_attempt(*, document_id, force_reindex):
+def _claim_document_attempt(*, document_id, force_reindex, expected_generation=None):
+    now = timezone.now()
     with transaction.atomic():
         document = Document.objects.select_for_update().filter(pk=document_id).first()
         if document is None or document.lifecycle_status not in (
@@ -102,13 +108,44 @@ def _claim_document_attempt(*, document_id, force_reindex):
         ):
             return None, None
         if (
+            expected_generation is not None
+            and document.processing_generation != expected_generation
+        ):
+            return document, None
+        if (
             document.processing_status == DocumentProcessingStatus.READY
+            and not force_reindex
+        ):
+            return document, None
+        if (
+            document.processing_status == DocumentProcessingStatus.PROCESSING
+            and document.processing_lease_expires_at is not None
+            and document.processing_lease_expires_at > now
             and not force_reindex
         ):
             return document, None
         document.processing_generation += 1
         document.processing_status = DocumentProcessingStatus.PROCESSING
-        document.save(update_fields=("processing_generation", "processing_status"))
+        document.processing_dispatch_attempts = 0
+        document.processing_lease_expires_at = now + DOCUMENT_PROCESSING_LEASE
+        document.processing_dispatch_lease_expires_at = None
+        document.processing_dispatch_successful_at = (
+            document.processing_dispatch_successful_at or now
+        )
+        document.processing_dispatch_failures = 0
+        document.processing_dispatch_error_code = ""
+        document.save(
+            update_fields=(
+                "processing_generation",
+                "processing_status",
+                "processing_dispatch_attempts",
+                "processing_lease_expires_at",
+                "processing_dispatch_lease_expires_at",
+                "processing_dispatch_successful_at",
+                "processing_dispatch_failures",
+                "processing_dispatch_error_code",
+            )
+        )
         return document, document.processing_generation
 
 
@@ -128,7 +165,23 @@ def _store_result(*, document_id, processing_generation, chunks, batch, status):
         ):
             if document.processing_status == DocumentProcessingStatus.PROCESSING:
                 document.processing_status = DocumentProcessingStatus.QUEUED
-                document.save(update_fields=["processing_status"])
+                document.processing_dispatch_attempts = 0
+                document.processing_dispatch_failures = 0
+                document.processing_dispatch_error_code = ""
+                document.processing_dispatch_successful_at = None
+                document.processing_dispatch_lease_expires_at = None
+                document.processing_lease_expires_at = None
+                document.save(
+                    update_fields=(
+                        "processing_status",
+                        "processing_dispatch_attempts",
+                        "processing_dispatch_failures",
+                        "processing_dispatch_error_code",
+                        "processing_dispatch_successful_at",
+                        "processing_dispatch_lease_expires_at",
+                        "processing_lease_expires_at",
+                    )
+                )
             return document
 
         document.chunks.all().delete()
@@ -162,15 +215,32 @@ def _store_result(*, document_id, processing_generation, chunks, batch, status):
             )
 
         document.processing_status = status
-        document.save(update_fields=["processing_status"])
+        document.processing_dispatch_attempts = 0
+        document.processing_dispatch_failures = 0
+        document.processing_dispatch_error_code = ""
+        document.processing_dispatch_successful_at = None
+        document.processing_dispatch_lease_expires_at = None
+        document.processing_lease_expires_at = None
+        document.save(
+            update_fields=(
+                "processing_status",
+                "processing_dispatch_attempts",
+                "processing_dispatch_failures",
+                "processing_dispatch_error_code",
+                "processing_dispatch_successful_at",
+                "processing_dispatch_lease_expires_at",
+                "processing_lease_expires_at",
+            )
+        )
         return document
 
 
-def process_document(*, document_id, force_reindex=False):
+def process_document(*, document_id, force_reindex=False, expected_generation=None):
     """Extract, chunk, and embed a stored document; fence stale retries."""
     document, processing_generation = _claim_document_attempt(
         document_id=document_id,
         force_reindex=force_reindex,
+        expected_generation=expected_generation,
     )
     if document is None or processing_generation is None:
         return document

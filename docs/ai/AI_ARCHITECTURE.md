@@ -280,6 +280,26 @@ request. Proposal creation and request completion commit together, preventing
 duplicate visible proposals. Only stable error codes are stored; source text,
 prompts, and provider exception detail are not logged.
 
+The database commit and broker publish are separate failure points. An
+`on_commit` callback sends the initial task; a Beat sweep runs every 60 seconds
+to find queued requests older than one minute if the callback or broker publish
+was lost. Row-locked two-minute dispatch leases serialize recovery, and the
+same analysis request and task IDs are reused. The stored publish-exception
+count saturates at 12; recovery retries with exponential backoff from 30
+seconds to 30 minutes. An exception does not prove
+the message was rejected: the broker may have accepted it before the publisher
+lost its connection. After five exceptions, the queued request exposes
+`queue_unavailable`; automatic recovery continues with the same task ID until
+worker claim or explicit cancellation. A reservation that expires without a
+recorded exception is ambiguous too. Publish attempts never fence a possibly
+queued message. Recovery scans at most 100 requests per sweep. This is
+at-least-once delivery; worker lease and generation checks keep duplicate or
+stale messages from publishing duplicate proposals.
+After five dispatch reservations without a worker claim, the request instead
+exposes the nonterminal `worker_backlog` warning. A worker claim clears either
+dispatch warning. The UI says processing is waiting and recovery continues; it
+does not state that a message was accepted when publication is ambiguous.
+
 ## 9. Observability and cost control
 
 Record per run:
@@ -332,12 +352,17 @@ keeps its context below 24,000 UTF-8 bytes to leave room for the system prompt.
 The request is committed before its initial Celery dispatch. A Beat sweep runs
 every 60 seconds to recover queued requests older than one minute, including
 the crash window between commit and the `on_commit` callback. Dispatch attempt
-count and a two-minute dispatch lease are persisted under a row lock, and
-recovery republishes the same request and Celery task IDs. Concurrent sweepers
-cannot reserve the same dispatch simultaneously. After five attempts without
-a worker claim, the request becomes terminal `failed` (`queue_unavailable`);
-stale task copies then return without calling the provider. Worker claims still
-use their own lease and generation fencing before any provider call.
+count, publish exceptions, a publish outcome marker, and a two-minute
+dispatch lease are persisted under a row lock. Recovery republishes the same
+request and Celery task IDs, so an older message already at the head of a
+backlogged queue remains valid. Concurrent sweepers cannot reserve the same
+dispatch simultaneously. After five dispatch exceptions the request exposes
+`queue_unavailable` while staying queued. Backoff limits retry frequency and
+Beat continues recovery without manual database edits. Because an exception can
+follow broker acceptance, recovery reuses the same task ID after repeated
+errors. Worker claims alone advance execution generation and use their own
+lease before any provider call. Five reservations without a worker claim expose
+`worker_backlog`; worker claim clears either dispatch warning.
 
 Add timeouts, bounded retries, rate limits, and per-task cost
 monitoring. Provider-specific errors must be normalized before reaching

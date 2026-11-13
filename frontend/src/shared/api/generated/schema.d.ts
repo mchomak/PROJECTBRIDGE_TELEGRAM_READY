@@ -1148,6 +1148,7 @@ export interface components {
             readonly checksum_sha256: string;
             readonly lifecycle_status: components["schemas"]["LifecycleStatusEnum"];
             readonly processing_status: components["schemas"]["ProcessingStatusEnum"];
+            readonly processing_dispatch_error_code: string;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */

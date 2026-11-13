@@ -375,6 +375,13 @@ Fields:
   `deletion_pending`, `deleted`
 - `processing_status` — `queued`, `processing`, `ready`, `failed`,
   `unsupported`
+- `processing_dispatch_error_code`, `processing_dispatch_attempts`,
+  `processing_dispatch_failures`, `processing_dispatch_successful_at`, and
+  `processing_dispatch_lease_expires_at` track durable task publication and
+  worker-claim recovery. `queue_unavailable` and `worker_backlog` are
+  nonterminal warnings; a worker claim clears them.
+- `processing_lease_expires_at` tracks worker execution separately from the
+  dispatch lease.
 - `processing_generation` is an internal fencing counter incremented each
   time a worker claims processing; only the current generation can publish
   derived chunks and embeddings
@@ -387,8 +394,15 @@ shared with both participants.
 
 The database stores metadata and lifecycle rows only. File bytes are
 stored through Django's default storage on the persistent local media
-volume. Upload creates the document with `processing_status=queued`;
-Stage 09 owns extraction and subsequent processing transitions.
+volume. Upload creates the document with `processing_status=queued`. A Beat
+sweep recovers stale dispatches using the same task ID for the current
+processing generation. Publish exceptions are ambiguous because the broker
+may have accepted a message before the connection failed. After five
+exceptions the queued document exposes `queue_unavailable`; after five
+dispatch reservations without a worker claim it exposes `worker_backlog`.
+Both warnings are nonterminal, and bounded exponential backoff continues
+automatically. A worker claim clears dispatch warnings and advances the
+processing generation.
 Lifecycle is an archive-first state machine. Archive requests may start
 only for `active` documents and move them to `archive_pending` until the
 other active participant approves or rejects. Approval moves the
@@ -681,7 +695,9 @@ not included in the customer-facing Project State response.
   ### `AIAnalysisRequest`
 
   Fields: `id`, `project_id`, `requested_by_id`, nullable `run_id`, `status`,
-  `celery_task_id`, `idempotency_key`, `execution_generation`,
+  `celery_task_id`, `idempotency_key`, `dispatch_attempts`,
+  `dispatch_failures`, `dispatch_successful_at`,
+  `dispatch_lease_expires_at`, `execution_generation`,
   `lease_expires_at`, `context_prepared_at`, `result_count`, `error_code`,
   `created_at`, `started_at`, `completed_at`.
 
@@ -690,6 +706,12 @@ not included in the customer-facing Project State response.
   idempotent. Worker leases and generation fencing prevent stale or duplicate
   workers from publishing proposals. `AIAnalysisRequestEvidence` stores the
   private, immutable source references and excerpts used for that request.
+  Dispatch reservations reuse `celery_task_id`; publish exceptions do not
+  prove non-delivery and never fence a possible FIFO message. After five
+  exceptions, `queue_unavailable` is shown while the request remains queued.
+  After five dispatch reservations without a worker claim, `worker_backlog` is
+  shown. Both warnings clear at claim, and exponential backoff bounds automatic
+  retries.
 
 ## 10. Specifications and audit
 
@@ -709,7 +731,8 @@ comments, and full version comparison are deferred.
 
 Fields: `id`, `project_id`, `specification_id`, `requested_by_id`,
 `idempotency_key`, `expected_version`, `source_context_hash`, `status`,
-`dispatch_attempts`, `dispatch_lease_expires_at`, `execution_generation`,
+`dispatch_attempts`, `dispatch_failures`, `dispatch_successful_at`,
+`dispatch_lease_expires_at`, `execution_generation`,
 `lease_expires_at`, `celery_task_id`, `error_code`, `created_at`,
 `started_at`, `completed_at`.
 
@@ -728,12 +751,14 @@ without internal generation-operation details.
 Initial Celery dispatch runs after the request transaction commits. A Beat
 recovery task scans queued requests older than one minute, reserves dispatch
 under a row lock, and republishes the same request and task IDs. Its two-minute
-dispatch lease prevents concurrent sweepers from sending duplicates. It makes
-at most five dispatch attempts; a request that remains undispatched is marked
-`failed` with `queue_unavailable`, releasing the one-active-request constraint.
-Workers still claim through `execution_generation` and the six-minute worker
-lease before calling the provider, so redispatched copies cannot start parallel
-generation for one request.
+dispatch lease prevents concurrent sweepers from sending duplicates. Publish
+exceptions are ambiguous; after five, `queue_unavailable` is shown while the
+request remains queued and automatic recovery continues with exponential
+backoff. After five dispatch reservations without a worker claim,
+`worker_backlog` is shown. Neither warning is terminal; worker claim clears
+them. Workers still claim through `execution_generation` and the six-minute
+worker lease before calling the provider, so redispatched copies cannot start
+parallel generation for one request.
 
 ### `ProjectAuditLog`
 

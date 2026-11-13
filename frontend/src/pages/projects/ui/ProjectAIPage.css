@@ -164,6 +164,15 @@
   line-height: 1.45;
 }
 
+.ai-history-row__body .ai-dispatch-warning {
+  padding: 8px 10px;
+  border: 1px solid #ecd6a8;
+  border-radius: 7px;
+  background: #fff8e8;
+  color: #6c552b;
+  line-height: 1.45;
+}
+
 .ai-proposal-card {
   padding: 18px;
   border: 1px solid #e2e9eb;

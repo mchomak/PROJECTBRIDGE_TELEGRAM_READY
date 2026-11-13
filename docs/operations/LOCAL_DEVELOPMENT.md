@@ -1,13 +1,12 @@
 # Local Development and Operations
 
-**Status:** Stage 01 local runtime
+**Status:** Current local MVP runtime
 
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-13
 
 ## Scope and pinned runtime
 
-Docker Compose runs the Stage 01 skeleton locally. It adds no product
-workflow or business model. Email uses Django's console backend; follow
+Docker Compose runs the local ProjectBridge MVP. Email uses Django's console backend; follow
 `docker compose logs -f backend` to see locally generated messages.
 
 | Service | Image or runtime | Local access |
@@ -17,6 +16,7 @@ workflow or business model. Email uses Django's console backend; follow
 | `db` | `pgvector/pgvector:0.8.7-pg17-bookworm` | Compose network only |
 | `redis` | `redis:7.4.12-alpine3.21` | Compose network only |
 | `celery-worker` | `python:3.13.18-slim-bookworm` | Compose network only |
+| `celery-beat` | `python:3.13.18-slim-bookworm` | Compose network only |
 
 Host ports 5173 and 8000 must be available before startup. The backend
 host port defaults to 8000 and can be changed with `BACKEND_HOST_PORT`
@@ -29,8 +29,18 @@ Redis ports are not published to the host. The example database and
 Redis passwords, and Django local key, are development placeholders;
 never use them in a deployed environment or commit a real `.env` file.
 
-Celery Beat is deliberately absent because Stage 01 has no scheduled
-task. Add a scheduler only when a real scheduled task enters scope.
+Celery Beat recovers stale document-processing, AI-analysis, and
+specification-generation dispatches every 60 seconds. It also processes due
+mutual-consent document deletions every five minutes. Redis is the broker; the
+owning app keeps durable request status, publish outcomes, and dispatch leases
+in PostgreSQL. After five publish exceptions, `queue_unavailable` reports that
+the queued work is waiting for processing and automatic retries continue with
+30-second to 30-minute exponential backoff with a stored exception-count cap
+of 12. After five dispatch reservations
+without a worker claim, `worker_backlog` reports delayed worker pickup. Both
+warnings are nonterminal and clear when a worker claims the operation. Publish
+exceptions are ambiguous, so recovery keeps the same task ID for the queued
+operation and never invalidates older FIFO copies.
 
 ## PowerShell setup
 
@@ -75,7 +85,7 @@ docker compose exec backend python manage.py migrate
 docker compose down
 ```
 
-`docker compose ps` should show all five services as healthy. The final
+`docker compose ps` should show all six services as healthy. The final
 command stops containers but preserves both named data volumes. Do not
 add `-v` when stopping during routine work or persistence verification.
 

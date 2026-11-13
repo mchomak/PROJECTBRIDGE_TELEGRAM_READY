@@ -19,5 +19,12 @@ export function useProjectDocuments(
     enabled: Boolean(projectId),
     retry: shouldRetry,
     retryDelay: (attempt) => Math.min(200 * 2 ** attempt, 1000),
+    refetchInterval: (query) =>
+      query.state.data?.results.some(
+        (document) =>
+          document.processing_status === 'queued' || document.processing_status === 'processing',
+      )
+        ? 3000
+        : false,
   });
 }

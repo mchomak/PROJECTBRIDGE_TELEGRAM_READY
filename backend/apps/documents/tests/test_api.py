@@ -175,6 +175,7 @@ def test_project_member_uploads_shared_text_document_with_server_metadata(
         "checksum_sha256",
         "lifecycle_status",
         "processing_status",
+        "processing_dispatch_error_code",
         "created_at",
         "archived_at",
         "deleted_at",

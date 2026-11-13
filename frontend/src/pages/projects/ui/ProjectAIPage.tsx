@@ -41,6 +41,16 @@ function requestLabel(request: AIAnalysisRequest): string {
   return request.status === 'queued' ? 'Waiting to start' : 'Analysis in progress';
 }
 
+function dispatchWarning(request: AIAnalysisRequest): string | null {
+  if (
+    request.status !== 'queued' ||
+    !['queue_unavailable', 'worker_backlog'].includes(request.error_code)
+  ) {
+    return null;
+  }
+  return 'This analysis is waiting for processing. The system will keep retrying; it has not started yet.';
+}
+
 function sourceLabel(sourceType: string): string {
   const labels: Record<string, string> = {
     questionnaire_answer: 'Questionnaire answer',
@@ -91,6 +101,11 @@ function AnalysisHistory({ requests }: { requests: AIAnalysisRequest[] }) {
                   <time dateTime={request.created_at}>{formatDate(request.created_at)}</time>
                 </div>
                 <p>{requestLabel(request)}</p>
+                {dispatchWarning(request) && (
+                  <p className="ai-dispatch-warning" role="status">
+                    {dispatchWarning(request)}
+                  </p>
+                )}
                 {request.run && (
                   <p className="ai-run-meta">
                     {request.run.model_name} · {request.run.input_tokens ?? '—'} input tokens ·{' '}

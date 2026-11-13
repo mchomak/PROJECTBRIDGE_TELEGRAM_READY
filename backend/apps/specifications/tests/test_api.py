@@ -286,6 +286,69 @@ def test_beat_recovers_dispatch_lost_after_database_commit(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_successful_specification_publishes_keep_the_original_fifo_message_valid(
+    monkeypatch, project_context
+):
+    from apps.specifications import services, tasks
+
+    project, executor, *_ = project_context
+    real_enqueue = services._enqueue_generation
+    monkeypatch.setattr(services, "_enqueue_generation", lambda **_kwargs: None)
+    request = queue_specification_generation(
+        project_id=project.pk,
+        actor=executor,
+        idempotency_key=uuid4(),
+    )
+    monkeypatch.setattr(services, "_enqueue_generation", real_enqueue)
+    SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    publications = []
+    monkeypatch.setattr(
+        tasks.generate_specification,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+    for _ in range(7):
+        SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_specification_generations.run() == 1
+
+    request.refresh_from_db()
+    original_publication = ((str(request.pk),), str(request.celery_task_id))
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.dispatch_attempts == 7
+    assert request.error_code == "worker_backlog"
+    assert publications == [original_publication] * 7
+
+    def broker_unavailable(*, args, task_id):
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(tasks.generate_specification, "apply_async", broker_unavailable)
+    for _ in range(5):
+        SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_specification_generations.run() == 0
+
+    request.refresh_from_db()
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.execution_generation == 0
+    assert request.dispatch_failures == 5
+
+    state, generation, *_ = services.claim_generation_request(
+        request_id=publications[0][0][0]
+    )
+    assert state == "claimed"
+    assert generation == 1
+    request.refresh_from_db()
+    assert request.error_code == ""
+    assert request.dispatch_attempts == 0
+
+
+@pytest.mark.django_db(transaction=True)
 def test_concurrent_beat_recovery_dispatches_a_queued_request_once(
     monkeypatch, project_context
 ):
@@ -350,8 +413,69 @@ def test_concurrent_beat_recovery_dispatches_a_queued_request_once(
     assert request.dispatch_attempts == 1
 
 
+@pytest.mark.django_db
+def test_ambiguous_generation_publishes_keep_the_first_fifo_message(
+    monkeypatch, project_context
+):
+    from apps.specifications import services, tasks
+
+    project, executor, *_ = project_context
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+    publish_calls = []
+
+    def accepted_then_raised(*, args, task_id):
+        publish_calls.append((args, task_id))
+        raise ConnectionError("publish acknowledgment was lost")
+
+    monkeypatch.setattr(
+        tasks.generate_specification, "apply_async", accepted_then_raised
+    )
+    request = queue_specification_generation(
+        project_id=project.pk,
+        actor=executor,
+        idempotency_key=uuid4(),
+    )
+    SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1)
+    )
+
+    for _ in range(4):
+        SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_specification_generations.run() == 0
+
+    request.refresh_from_db()
+    expected = ((str(request.pk),), str(request.celery_task_id))
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.execution_generation == 0
+    assert request.dispatch_attempts == 5
+    assert request.dispatch_failures == 5
+    assert request.error_code == "queue_unavailable"
+    assert publish_calls == [expected] * 5
+
+    provider_calls = []
+
+    def fake_generate_text(**kwargs):
+        provider_calls.append(kwargs)
+        return SimpleNamespace(text="# Processed from the FIFO head")
+
+    monkeypatch.setattr(tasks, "generate_text", fake_generate_text)
+    assert tasks.generate_specification.run(*publish_calls[0][0]) == "succeeded"
+    assert tasks.generate_specification.run(*publish_calls[1][0]) == "succeeded"
+
+    request.refresh_from_db()
+    assert request.status == SpecificationGenerationStatus.SUCCEEDED
+    assert request.execution_generation == 1
+    assert request.error_code == ""
+    assert len(provider_calls) == 1
+    assert Specification.objects.get(project=project).content == (
+        "# Processed from the FIFO head"
+    )
+
+
 @pytest.mark.django_db(transaction=True)
-def test_dispatch_recovery_exhaustion_fails_request_and_unblocks_new_generation(
+def test_dispatch_failures_surface_warning_and_automatic_recovery_keeps_generation(
     monkeypatch, project_context
 ):
     from apps.specifications import services, tasks
@@ -368,9 +492,29 @@ def test_dispatch_recovery_exhaustion_fails_request_and_unblocks_new_generation(
     SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
         created_at=timezone.now()
         - services.GENERATION_DISPATCH_STALE_AFTER
-        - timedelta(seconds=1),
-        dispatch_attempts=services.MAX_GENERATION_DISPATCH_ATTEMPTS,
+        - timedelta(seconds=1)
     )
+    failed_publications = []
+
+    def broker_unavailable(*, args, task_id):
+        failed_publications.append((args, task_id))
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(tasks.generate_specification, "apply_async", broker_unavailable)
+    for _ in range(services.MAX_GENERATION_DISPATCH_FAILURES):
+        SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+            dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        assert tasks.recover_stale_specification_generations.run() == 0
+
+    request.refresh_from_db()
+    assert request.dispatch_attempts == services.MAX_GENERATION_DISPATCH_FAILURES
+    assert request.dispatch_failures == services.MAX_GENERATION_DISPATCH_FAILURES
+    assert request.dispatch_successful_at is None
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.error_code == "queue_unavailable"
+    assert request.execution_generation == 0
+
     dispatched = []
     monkeypatch.setattr(
         tasks.generate_specification,
@@ -378,23 +522,83 @@ def test_dispatch_recovery_exhaustion_fails_request_and_unblocks_new_generation(
         lambda **kwargs: dispatched.append(kwargs),
     )
 
+    SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+        dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
     recovered = tasks.recover_stale_specification_generations.run()
 
     request.refresh_from_db()
-    assert recovered == 0
-    assert request.status == SpecificationGenerationStatus.FAILED
-    assert request.error_code == "queue_unavailable"
-    assert dispatched == []
-    retry = queue_specification_generation(
+    assert recovered == 1
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.error_code == "worker_backlog"
+    assert len(failed_publications) == services.MAX_GENERATION_DISPATCH_FAILURES
+    assert dispatched == [
+        {"args": (str(request.pk),), "task_id": str(request.celery_task_id)}
+    ]
+    assert request.execution_generation == 0
+    state, generation, *_ = services.claim_generation_request(
+        request_id=failed_publications[0][0][0]
+    )
+    assert state == "claimed"
+    assert generation == 1
+    request.refresh_from_db()
+    assert request.error_code == ""
+
+
+@pytest.mark.django_db(transaction=True)
+def test_specification_success_marker_save_failure_preserves_accepted_fifo(
+    monkeypatch, project_context
+):
+    from apps.specifications import services, tasks
+
+    project, executor, *_ = project_context
+    monkeypatch.setattr(services.transaction, "on_commit", lambda callback: callback())
+    real_success_marker = services._record_generation_dispatch_success
+    publications = []
+    monkeypatch.setattr(
+        tasks.generate_specification,
+        "apply_async",
+        lambda *, args, task_id: publications.append((args, task_id)),
+    )
+
+    def fail_success_marker(**_kwargs):
+        raise OperationalError("temporary marker write failure")
+
+    monkeypatch.setattr(
+        services, "_record_generation_dispatch_success", fail_success_marker
+    )
+    request = queue_specification_generation(
         project_id=project.pk,
         actor=executor,
         idempotency_key=uuid4(),
     )
-    assert retry.pk != request.pk
-    assert retry.status == SpecificationGenerationStatus.QUEUED
-    assert dispatched == [
-        {"args": (str(retry.pk),), "task_id": str(retry.celery_task_id)}
-    ]
+    assert len(publications) == 1
+    assert request.dispatch_successful_at is None
+    SpecificationGenerationRequest.objects.filter(pk=request.pk).update(
+        created_at=timezone.now() - timedelta(days=1),
+        dispatch_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    monkeypatch.setattr(
+        services, "_record_generation_dispatch_success", real_success_marker
+    )
+    assert tasks.recover_stale_specification_generations.run() == 1
+
+    request.refresh_from_db()
+    assert request.dispatch_successful_at is not None
+    assert request.status == SpecificationGenerationStatus.QUEUED
+    assert request.execution_generation == 0
+    expected = ((str(request.pk),), str(request.celery_task_id))
+    assert publications == [expected, expected]
+    state, generation, *_ = services.claim_generation_request(
+        request_id=publications[0][0][0]
+    )
+    assert state == "claimed"
+    assert generation == 1
+    duplicate_state, duplicate_generation, *_ = services.claim_generation_request(
+        request_id=publications[1][0][0]
+    )
+    assert duplicate_state == "busy"
+    assert duplicate_generation == 1
 
 
 @pytest.mark.django_db

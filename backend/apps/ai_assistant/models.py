@@ -411,6 +411,10 @@ class AIAnalysisRequest(models.Model):
         default=AIAnalysisRequestStatus.QUEUED,
     )
     celery_task_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    dispatch_attempts = models.PositiveIntegerField(default=0)
+    dispatch_failures = models.PositiveSmallIntegerField(default=0)
+    dispatch_successful_at = models.DateTimeField(blank=True, null=True)
+    dispatch_lease_expires_at = models.DateTimeField(blank=True, null=True)
     idempotency_key = models.UUIDField(default=uuid.uuid4)
     execution_generation = models.PositiveIntegerField(default=0)
     lease_expires_at = models.DateTimeField(blank=True, null=True)

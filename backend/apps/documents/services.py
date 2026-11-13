@@ -11,6 +11,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.services import record_project_action
@@ -37,6 +38,14 @@ from .selectors import get_document_for_member, get_documents_for_member
 MAX_DOCUMENT_SIZE_BYTES = 20 * 1024 * 1024
 DEFAULT_DOCUMENT_PAGE_SIZE = 20
 MAX_DOCUMENT_PAGE_SIZE = 100
+DOCUMENT_DISPATCH_STALE_AFTER = timedelta(minutes=1)
+DOCUMENT_DISPATCH_LEASE = timedelta(minutes=2)
+DOCUMENT_DISPATCH_RETRY_BASE = timedelta(seconds=30)
+DOCUMENT_DISPATCH_RETRY_MAX = timedelta(minutes=30)
+DOCUMENT_DISPATCH_UNAVAILABLE_AFTER = 5
+DOCUMENT_DISPATCH_BACKLOG_WARNING_AFTER = 5
+MAX_DOCUMENT_DISPATCH_FAILURES = 12
+DOCUMENT_DISPATCH_BATCH_SIZE = 100
 logger = logging.getLogger(__name__)
 
 _EXTENSION_MIME_TYPES = {
@@ -212,8 +221,9 @@ def upload_document(*, project_id, actor, file):
             from apps.documents.tasks import process_project_document
 
             transaction.on_commit(
-                lambda document_id=str(document.pk): process_project_document.delay(
-                    document_id
+                lambda document_id=str(document.pk): _enqueue_document_processing(
+                    document_id=document_id,
+                    task=process_project_document,
                 )
             )
             return document
@@ -389,8 +399,232 @@ def _enqueue_document_if_queued(document):
     from apps.documents.tasks import process_project_document
 
     transaction.on_commit(
-        lambda document_id=str(document.pk): process_project_document.delay(document_id)
+        lambda document_id=str(document.pk): _enqueue_document_processing(
+            document_id=document_id,
+            task=process_project_document,
+        )
     )
+
+
+def _enqueue_document_processing(*, document_id, task, require_stale=False):
+    attempt = None
+    processing_generation = None
+    try:
+        reservation = _reserve_document_dispatch(
+            document_id=document_id,
+            require_stale=require_stale,
+        )
+        if reservation is None:
+            return False
+        attempt, processing_generation = reservation
+        task.apply_async(
+            args=(document_id, processing_generation),
+            task_id=f"{document_id}:process:{processing_generation}",
+        )
+    except Exception:
+        if attempt is not None:
+            try:
+                _record_document_dispatch_failure(
+                    document_id=document_id,
+                    attempt=attempt,
+                    processing_generation=processing_generation,
+                )
+            except Exception:
+                # The dispatch lease expires and Beat will retry the durable document.
+                pass
+        return False
+    try:
+        _record_document_dispatch_success(
+            document_id=document_id,
+            attempt=attempt,
+            processing_generation=processing_generation,
+        )
+    except Exception:
+        # A successful publish is retried by Beat if the durable marker write fails.
+        pass
+    return True
+
+
+def _reserve_document_dispatch(*, document_id, require_stale=False):
+    now = timezone.now()
+    with transaction.atomic():
+        document = Document.objects.select_for_update().filter(pk=document_id).first()
+        if document is None or document.lifecycle_status not in (
+            DocumentLifecycleStatus.ACTIVE,
+            DocumentLifecycleStatus.ARCHIVED,
+        ):
+            return None
+        if document.processing_status == DocumentProcessingStatus.QUEUED:
+            if (
+                require_stale
+                and document.created_at > now - DOCUMENT_DISPATCH_STALE_AFTER
+            ):
+                return None
+        elif document.processing_status == DocumentProcessingStatus.PROCESSING and (
+            document.processing_lease_expires_at is None
+            or document.processing_lease_expires_at <= now
+        ):
+            pass
+        else:
+            return None
+        if (
+            document.processing_dispatch_lease_expires_at is not None
+            and document.processing_dispatch_lease_expires_at > now
+        ):
+            return None
+        if (
+            document.processing_dispatch_successful_at is None
+            and document.processing_dispatch_attempts
+            > document.processing_dispatch_failures
+        ):
+            # An expired reservation without a recorded broker error is ambiguous.
+            document.processing_dispatch_successful_at = now
+            if (
+                document.processing_dispatch_attempts
+                >= DOCUMENT_DISPATCH_BACKLOG_WARNING_AFTER
+            ):
+                document.processing_dispatch_error_code = "worker_backlog"
+        document.processing_dispatch_attempts += 1
+        document.processing_dispatch_lease_expires_at = now + DOCUMENT_DISPATCH_LEASE
+        document.save(
+            update_fields=(
+                "processing_dispatch_attempts",
+                "processing_dispatch_lease_expires_at",
+                "processing_dispatch_successful_at",
+                "processing_dispatch_error_code",
+            )
+        )
+        return document.processing_dispatch_attempts, document.processing_generation
+
+
+def _record_document_dispatch_success(*, document_id, attempt, processing_generation):
+    with transaction.atomic():
+        document = (
+            Document.objects.select_for_update()
+            .filter(
+                pk=document_id,
+                processing_dispatch_attempts=attempt,
+                processing_generation=processing_generation,
+                processing_status__in=(
+                    DocumentProcessingStatus.QUEUED,
+                    DocumentProcessingStatus.PROCESSING,
+                ),
+            )
+            .first()
+        )
+        if document is None:
+            return
+        fields = []
+        if document.processing_dispatch_successful_at is None:
+            document.processing_dispatch_successful_at = timezone.now()
+            fields.append("processing_dispatch_successful_at")
+        if document.processing_dispatch_failures:
+            document.processing_dispatch_failures = 0
+            fields.append("processing_dispatch_failures")
+        if (
+            document.processing_dispatch_attempts
+            >= DOCUMENT_DISPATCH_BACKLOG_WARNING_AFTER
+        ):
+            document.processing_dispatch_error_code = "worker_backlog"
+            fields.append("processing_dispatch_error_code")
+        elif document.processing_dispatch_error_code in {
+            "queue_unavailable",
+            "worker_backlog",
+        }:
+            document.processing_dispatch_error_code = ""
+            fields.append("processing_dispatch_error_code")
+        if fields:
+            document.save(update_fields=tuple(fields))
+
+
+def _record_document_dispatch_failure(*, document_id, attempt, processing_generation):
+    now = timezone.now()
+    with transaction.atomic():
+        document = (
+            Document.objects.select_for_update()
+            .filter(
+                pk=document_id,
+                processing_dispatch_attempts=attempt,
+                processing_generation=processing_generation,
+            )
+            .first()
+        )
+        if (
+            document is None
+            or document.lifecycle_status
+            not in (DocumentLifecycleStatus.ACTIVE, DocumentLifecycleStatus.ARCHIVED)
+            or document.processing_status
+            not in (
+                DocumentProcessingStatus.QUEUED,
+                DocumentProcessingStatus.PROCESSING,
+            )
+        ):
+            return
+        document.processing_dispatch_failures = min(
+            MAX_DOCUMENT_DISPATCH_FAILURES,
+            document.processing_dispatch_failures + 1,
+        )
+        if document.processing_dispatch_failures >= DOCUMENT_DISPATCH_UNAVAILABLE_AFTER:
+            document.processing_dispatch_error_code = "queue_unavailable"
+        delay = _document_dispatch_retry_delay(document.processing_dispatch_failures)
+        document.processing_dispatch_lease_expires_at = now + delay
+        document.save(
+            update_fields=(
+                "processing_dispatch_error_code",
+                "processing_dispatch_failures",
+                "processing_dispatch_lease_expires_at",
+            )
+        )
+
+
+def _document_dispatch_retry_delay(failures):
+    multiplier = 2 ** max(0, min(failures - 1, 10))
+    return min(DOCUMENT_DISPATCH_RETRY_BASE * multiplier, DOCUMENT_DISPATCH_RETRY_MAX)
+
+
+def _stale_document_dispatch_candidates(*, now=None):
+    now = now or timezone.now()
+    stale_before = now - DOCUMENT_DISPATCH_STALE_AFTER
+    stale_queued = Q(
+        processing_status=DocumentProcessingStatus.QUEUED,
+        created_at__lte=stale_before,
+    )
+    expired_processing = Q(
+        processing_status=DocumentProcessingStatus.PROCESSING,
+    ) & (
+        Q(processing_lease_expires_at__isnull=True)
+        | Q(processing_lease_expires_at__lte=now)
+    )
+    return list(
+        Document.objects.filter(
+            lifecycle_status__in=(
+                DocumentLifecycleStatus.ACTIVE,
+                DocumentLifecycleStatus.ARCHIVED,
+            )
+        )
+        .filter(stale_queued | expired_processing)
+        .filter(
+            Q(processing_dispatch_lease_expires_at__isnull=True)
+            | Q(processing_dispatch_lease_expires_at__lte=now)
+        )
+        .order_by("created_at", "id")
+        .values_list("id", flat=True)[:DOCUMENT_DISPATCH_BATCH_SIZE]
+    )
+
+
+def recover_stale_document_processing():
+    candidates = _stale_document_dispatch_candidates()
+    from apps.documents.tasks import process_project_document
+
+    dispatched = 0
+    for document_id in candidates:
+        if _enqueue_document_processing(
+            document_id=str(document_id),
+            task=process_project_document,
+            require_stale=True,
+        ):
+            dispatched += 1
+    return dispatched
 
 
 def request_lifecycle_action(*, document_id, actor, action):

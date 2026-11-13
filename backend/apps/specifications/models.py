@@ -80,7 +80,9 @@ class SpecificationGenerationRequest(models.Model):
         choices=SpecificationGenerationStatus.choices,
         default=SpecificationGenerationStatus.QUEUED,
     )
-    dispatch_attempts = models.PositiveSmallIntegerField(default=0)
+    dispatch_attempts = models.PositiveIntegerField(default=0)
+    dispatch_failures = models.PositiveSmallIntegerField(default=0)
+    dispatch_successful_at = models.DateTimeField(blank=True, null=True)
     dispatch_lease_expires_at = models.DateTimeField(blank=True, null=True)
     execution_generation = models.PositiveIntegerField(default=0)
     lease_expires_at = models.DateTimeField(blank=True, null=True)
