@@ -5,3 +5,4 @@ export { ChatPage } from './ui/ChatPage';
 export { ProjectStatePage } from './ui/ProjectStatePage';
 export { QuestionnairePage } from './ui/QuestionnairePage';
 export { ProjectAIPage } from './ui/ProjectAIPage';
+export { ProjectSpecificationPage } from './ui/ProjectSpecificationPage';

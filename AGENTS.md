@@ -177,7 +177,7 @@ ProjectBridge is a React/TypeScript/Vite frontend and Django/DRF ASGI modular mo
 
 - `docker-compose.yml` runs `frontend`, `backend`, `db`, `redis`, `celery-worker`, and `celery-beat`. Vite is published on loopback port 5173; Django on `BACKEND_HOST_PORT` (default 8000). PostgreSQL and Redis are Compose-network services. PostgreSQL and media use named volumes; ordinary `docker compose down` preserves them. Do not use `down -v` for routine stops.
 - Local Compose inputs are named in `.env.example`: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_BASE_URL`, `BACKEND_HOST_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `REDIS_PASSWORD`. Container settings also use `DB_HOST`, `DB_PORT`, and `REDIS_URL`. Keep `.env` local and never print or commit its values.
-- Settings are in `backend/config/settings/`; `config/urls.py` mounts health, auth, invitation, questionnaire, Project State, project, and document APIs. `config/asgi.py` routes HTTP and authenticated WebSockets, including `/ws/v1/health/` and `/ws/v1/projects/{project_id}/chat/`. `config/celery_app.py` configures Celery; Beat runs the retry-safe document deletion sweep every 300 seconds.
+- Settings are in `backend/config/settings/`; `config/urls.py` mounts health, auth, invitation, questionnaire, Project State, project, and document APIs. `config/asgi.py` routes HTTP and authenticated WebSockets, including `/ws/v1/health/` and `/ws/v1/projects/{project_id}/chat/`. `config/celery_app.py` configures Celery; Beat runs the retry-safe document deletion sweep every 300 seconds and specification dispatch recovery every 60 seconds.
 - From the repo root, start and migrate with:
 
 ```powershell

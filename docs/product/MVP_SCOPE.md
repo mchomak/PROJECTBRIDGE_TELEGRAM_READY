@@ -147,8 +147,12 @@ product has no agreed objective weighting model for such a metric.
 ### 3.8 Specification
 
 The MVP architecture retains a specification entity and the ability to
-generate and edit a specification draft, subject to final confirmation
-of the exact generation scope and output format.
+generate and edit one shared Markdown draft. It is available to projects
+but is not required to create or complete a project. Generation uses the
+project passport and shared Project State only; unresolved questions and
+conflicts remain marked unresolved. Both active participants can read the
+draft, while only the executor can generate or edit it in a writable
+project.
 
 Formal customer approval, electronic signing, approval workflows, and
 specification comments are deferred.

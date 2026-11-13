@@ -16,6 +16,7 @@ urlpatterns = [
     path("api/v1/documents/", include("apps.documents.api.document_urls")),
     path("api/v1/", include("apps.ai_assistant.api.urls")),
     path("api/v1/", include("apps.project_state.api.urls")),
+    path("api/v1/", include("apps.specifications.api.urls")),
     path("api/v1/projects/", include("apps.projects.api.urls")),
 ]
 

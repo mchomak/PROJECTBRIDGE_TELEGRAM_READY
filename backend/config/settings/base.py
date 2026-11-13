@@ -114,7 +114,11 @@ CELERY_BEAT_SCHEDULE = {
     "document-lifecycle-deletion-sweep": {
         "task": "apps.documents.tasks.process_expired_document_deletions",
         "schedule": 300.0,
-    }
+    },
+    "specification-generation-dispatch-recovery": {
+        "task": "apps.specifications.tasks.recover_stale_specification_generations",
+        "schedule": 60.0,
+    },
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

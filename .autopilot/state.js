@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "AGENTS.md",
   "skillDir": "C:/Users/McHomak/.agents/skills/autopilot",
   "startedAt": "2026-11-13T03:00:44+03:00",
-  "updatedAt": "2026-11-13T15:49:12+03:00",
+  "updatedAt": "2026-11-13T17:38:20+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -132,7 +132,7 @@ window.STATE =
       ],
       "wave": 3,
       "zone": [],
-      "status": "review",
+      "status": "done",
       "startedAt": "2026-11-13T05:28:43+03:00",
       "repairs": 0,
       "handoffs": 0,
@@ -142,7 +142,9 @@ window.STATE =
       },
       "concerns": [
         "No paid provider calls; production AI privacy disclosures remain a deployment gate."
-      ]
+      ],
+      "finishedAt": "2026-11-13T15:50:28+03:00",
+      "commit": "0b0b19e"
     },
     {
       "id": "12",
@@ -155,10 +157,17 @@ window.STATE =
       ],
       "wave": 4,
       "zone": [],
-      "status": "pending",
-      "startedAt": null,
+      "status": "review",
+      "startedAt": "2026-11-13T15:50:28+03:00",
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "tests": {
+        "passed": 423,
+        "failed": 0
+      },
+      "concerns": [
+        "No paid provider calls; recovery may fail after five unclaimed dispatches."
+      ]
     },
     {
       "id": "13",

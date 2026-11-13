@@ -700,7 +700,40 @@ One-to-one with Project.
 Fields: `id`, `project_id`, `content`, `status`, `updated_by_id`,
 `version`, `created_at`, `updated_at`.
 
-Formal approval, comments, and full version comparison are deferred.
+There is one current editable Markdown draft per project. `version` starts
+at 1 and increments after every accepted edit or generated replacement.
+Generation does not retain prior content versions. Formal approval,
+comments, and full version comparison are deferred.
+
+### `SpecificationGenerationRequest`
+
+Fields: `id`, `project_id`, `specification_id`, `requested_by_id`,
+`idempotency_key`, `expected_version`, `source_context_hash`, `status`,
+`dispatch_attempts`, `dispatch_lease_expires_at`, `execution_generation`,
+`lease_expires_at`, `celery_task_id`, `error_code`, `created_at`,
+`started_at`, `completed_at`.
+
+Statuses are `queued`, `running`, `succeeded`, `failed`, and `superseded`.
+An idempotency key is unique per project and requester, and only one request
+per project may be queued or running. `source_context_hash` is a SHA-256
+fingerprint of the approved passport and shared Project State at enqueue;
+raw prompts and a duplicate copy of source text are not persisted. A worker
+rebuilds the context and checks its fingerprint before calling the AI Router
+and again before publishing. Source changes supersede the request. A user
+edit increments the specification version and supersedes the active request,
+so an older generation cannot overwrite a newer draft. The request status is
+exposed to the executor for polling; the customer receives the shared draft
+without internal generation-operation details.
+
+Initial Celery dispatch runs after the request transaction commits. A Beat
+recovery task scans queued requests older than one minute, reserves dispatch
+under a row lock, and republishes the same request and task IDs. Its two-minute
+dispatch lease prevents concurrent sweepers from sending duplicates. It makes
+at most five dispatch attempts; a request that remains undispatched is marked
+`failed` with `queue_unavailable`, releasing the one-active-request constraint.
+Workers still claim through `execution_generation` and the six-minute worker
+lease before calling the provider, so redispatched copies cannot start parallel
+generation for one request.
 
 ### `ProjectAuditLog`
 
@@ -730,6 +763,7 @@ keys, or unnecessary document/message content.
 - AIAnalysisRun to AIProposal: one-to-many.
 - AIProposal to Evidence: many-to-many through AIProposalEvidence.
 - Project to Specification: one-to-one.
+- Project to SpecificationGenerationRequest: one-to-many.
 - Project to ProjectAuditLog: one-to-many.
 
 ## 12. Migration gate

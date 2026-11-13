@@ -767,6 +767,12 @@ export function ProjectOverviewPage() {
           </Link>
           <Link
             className="button button--secondary project-state-link"
+            to={`/app/projects/${project.id}/specification`}
+          >
+            Open specification
+          </Link>
+          <Link
+            className="button button--secondary project-state-link"
             to={`/app/projects/${project.id}/chat`}
           >
             Open project chat

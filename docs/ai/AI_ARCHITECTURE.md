@@ -297,6 +297,48 @@ Record per run:
 Do not store complete prompts or duplicate sensitive source content by
 default. Store source IDs and evidence references.
 
+### Specification generation source policy
+
+Specification generation uses only the project passport and shared Project
+State. The snapshot includes the passport and Project State stages,
+requirements, tasks, open questions, and conflicts through their owning-app
+selectors. It omits project name and description. Only confirmed, in-progress,
+blocked, or completed requirements are approved commitments; draft
+requirements are unconfirmed, and rejected requirements are excluded from the
+current requirements list. Cancelled stages and tasks are excluded from the
+current plan. An open question is labeled unresolved; an unresolved conflict is
+explicitly labeled as a contradiction for which neither side is an
+established fact. Dismissed questions and conflicts remain labeled dismissed
+and are not requirements or decisions; a resolved conflict is represented
+only by its recorded resolution. The generator must not choose a side or
+invent missing facts. Chat, documents/RAG, internal AI analyses, and pending AI proposals
+are excluded. This bounded policy avoids mixing unreviewed evidence into the
+shared draft until the product defines an authority and disclosure policy
+for those sources.
+
+The asynchronous request stores the source-context SHA-256 hash and the
+specification version only, not the complete prompt or a copy of source
+content. A worker rebuilds the structured context and compares the hash
+after building the prompt, immediately before calling the router, and again
+before publishing. These checks use short transactions; no database lock is
+held over the provider network call. If sources change before the call, the
+request is superseded without sending stale input. If sources change during
+the model call, its output is discarded. This provides source-change
+detection without retaining a second copy of shared customer data. The router
+applies the `specification_generation` profile's 32,000-byte input,
+output-token, timeout, fallback, and cost limits; the specification worker
+keeps its context below 24,000 UTF-8 bytes to leave room for the system prompt.
+
+The request is committed before its initial Celery dispatch. A Beat sweep runs
+every 60 seconds to recover queued requests older than one minute, including
+the crash window between commit and the `on_commit` callback. Dispatch attempt
+count and a two-minute dispatch lease are persisted under a row lock, and
+recovery republishes the same request and Celery task IDs. Concurrent sweepers
+cannot reserve the same dispatch simultaneously. After five attempts without
+a worker claim, the request becomes terminal `failed` (`queue_unavailable`);
+stale task copies then return without calling the provider. Worker claims still
+use their own lease and generation fencing before any provider call.
+
 Add timeouts, bounded retries, rate limits, and per-task cost
 monitoring. Provider-specific errors must be normalized before reaching
 business modules.

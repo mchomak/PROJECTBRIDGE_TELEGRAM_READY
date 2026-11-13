@@ -12,6 +12,7 @@ import {
   ProjectOverviewPage,
   ProjectStatePage,
   ProjectAIPage,
+  ProjectSpecificationPage,
 } from '../pages/projects';
 import { InvitationPage } from '../pages/invitations';
 import { QuestionnairePage } from '../pages/projects';
@@ -91,6 +92,10 @@ export function App() {
             <Route path="projects/:projectId/chat" element={<ChatPage />} />
             <Route path="projects/:projectId/state" element={<ProjectStatePage />} />
             <Route path="projects/:projectId/ai" element={<ProjectAIPage />} />
+            <Route
+              path="projects/:projectId/specification"
+              element={<ProjectSpecificationPage />}
+            />
             <Route path="projects/:projectId/questionnaire" element={<QuestionnairePage />} />
           </Route>
           <Route path="/verification-required" element={<VerificationRequiredPage />} />

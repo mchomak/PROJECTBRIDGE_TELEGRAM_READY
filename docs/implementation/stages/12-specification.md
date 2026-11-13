@@ -27,6 +27,22 @@ acceptance.
 Formal customer approval, comments, signing, and approval workflow
 remain out of scope.
 
+### Resolved for this stage (2026-11-13; ADR-018)
+
+- Keep one shared, editable Markdown draft per project. Draft availability
+  is part of the MVP workflow, but a draft is not required to create or
+  complete a project.
+- Generate asynchronously from the approved project passport and shared
+  Project State only. Do not use chat, documents/RAG, internal AI analyses,
+  or pending AI proposals.
+- Preserve open questions and unresolved conflicts as explicitly unresolved;
+  do not assert either side of a conflict as fact.
+- Both active project members can read. Only the executor can generate and
+  edit while the project is writable. Completed and archived projects are
+  read-only.
+- Enforce optimistic version checks and discard generation results if the
+  draft or source snapshot changes before publication.
+
 ## Scope
 
 ### Backend

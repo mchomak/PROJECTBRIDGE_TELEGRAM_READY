@@ -526,6 +526,18 @@ corresponding Project State change.
 Customer approval, comments, electronic signatures, and formal version
 comparison are out of scope.
 
+`PATCH` accepts only `content` (Markdown) and `version`; a stale version
+returns `409 Conflict`. Generation requires an
+`Idempotency-Key` UUID, returns `202` with its durable request ID and status,
+and repeated keys from the same executor and project return the original
+request. `GET` includes the latest generation request status for executor
+polling; customer responses omit this operation status while retaining the
+shared draft content.
+Only one generation may be queued or running per project. A generation uses
+the source context captured by its enqueue hash; if the approved passport,
+shared Project State, or specification version changes before publication,
+the request is marked `superseded` and the existing draft is preserved.
+
 ## 14. OpenAPI
 
 Use `drf-spectacular` to generate the OpenAPI schema from the

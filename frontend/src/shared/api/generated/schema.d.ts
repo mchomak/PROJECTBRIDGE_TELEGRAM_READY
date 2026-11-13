@@ -742,6 +742,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/specification/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["project_specification_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["project_specification_update"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/specification/generate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["project_specification_generate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/stages/": {
         parameters: {
             query?: never;
@@ -1772,6 +1804,55 @@ export interface components {
          * @enum {string}
          */
         RoleEnum: "executor" | "customer";
+        Specification: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project_id: string;
+            readonly content: string;
+            readonly status: components["schemas"]["SpecificationStatusEnum"];
+            /** Format: uuid */
+            readonly updated_by_id: string;
+            readonly version: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly generation: components["schemas"]["SpecificationGenerationRequest"] | null;
+        };
+        SpecificationGenerationRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["SpecificationGenerationRequestStatusEnum"];
+            readonly expected_version: number;
+            readonly error_code: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly started_at: string | null;
+            /** Format: date-time */
+            readonly completed_at: string | null;
+        };
+        /**
+         * @description * `queued` - Queued
+         *     * `running` - Running
+         *     * `succeeded` - Succeeded
+         *     * `failed` - Failed
+         *     * `superseded` - Superseded
+         * @enum {string}
+         */
+        SpecificationGenerationRequestStatusEnum: "queued" | "running" | "succeeded" | "failed" | "superseded";
+        /** @description Keep all optimistic-patch fields required in the PATCH OpenAPI schema. */
+        SpecificationPatchSchema: {
+            content: string;
+            version: number;
+        };
+        /**
+         * @description * `draft` - Draft
+         *     * `ready` - Ready
+         * @enum {string}
+         */
+        SpecificationStatusEnum: "draft" | "ready";
         SubmitQuestionnaireSubmission: {
             /** @default false */
             confirm_prefilled: boolean;
@@ -4524,6 +4605,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_specification_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Specification"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_specification_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecificationPatchSchema"];
+                "application/x-www-form-urlencoded": components["schemas"]["SpecificationPatchSchema"];
+                "multipart/form-data": components["schemas"]["SpecificationPatchSchema"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Specification"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    project_specification_generate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecificationGenerationRequest"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             401: {

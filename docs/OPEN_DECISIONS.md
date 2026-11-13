@@ -73,9 +73,17 @@ silently.
 6.  **Customer contribution:** Confirm whether any structured customer
     edits beyond questionnaire submission will ever be allowed in the
     MVP.
-7.  **Specification scope:** Confirm generation inputs, output format,
-    editing behavior, and whether a specification draft is mandatory for
-    MVP acceptance.
+7.  **Specification scope — resolved for the MVP on 2026-11-13:** The
+    specification is one shared, editable Markdown draft. Generation uses
+    only the executor-approved project passport and shared Project State;
+    it excludes chat, documents/RAG, internal AI analyses, and pending AI
+    proposals. Open questions and unresolved Project State conflicts must
+    remain explicitly unresolved and cannot be presented as settled facts.
+    Both active project members may read it; only the executor may generate
+    or edit while the project is `draft` or `active`. A draft is an
+    available MVP workflow, not a prerequisite for project creation or
+    completion. There is no customer approval, signing, comments, or formal
+    version comparison. See ADR-018.
 8.  **Chat scope:** Decide whether message editing, deletion,
     attachments, read receipts, and typing indicators are excluded.
 9.  **Account lifecycle:** Define account deactivation/deletion and
