@@ -1,8 +1,8 @@
 window.STATE =
 {
-  "slug": "stages-00-08-audit",
-  "dir": "2026-11-13-stages-00-08-audit--wip",
-  "title": "ProjectBridge: stage 00-08 audit",
+  "slug": "stages-09-13",
+  "dir": "2026-11-13-stages-09-13--wip",
+  "title": "ProjectBridge: stages 09-13",
   "mode": "full",
   "depth": "normal",
   "polish": null,
@@ -10,199 +10,170 @@ window.STATE =
   "briefFile": "2026-11-13-brief.md",
   "memoryFile": "AGENTS.md",
   "skillDir": "C:/Users/McHomak/.agents/skills/autopilot",
-  "startedAt": "2026-11-13T02:43:09+03:00",
-  "updatedAt": "2026-11-13T02:46:50+03:00",
-  "finishedAt": "2026-11-13T02:46:50+03:00",
+  "startedAt": "2026-11-13T03:00:44+03:00",
+  "updatedAt": "2026-11-13T03:33:15+03:00",
+  "finishedAt": null,
   "stages": [
     {
       "id": "preflight",
       "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:43:09+03:00",
-      "note": ""
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": "2026-11-13T03:00:44+03:00"
     },
     {
       "id": "manifest",
       "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:43:09+03:00",
-      "note": ""
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": "2026-11-13T03:00:44+03:00"
     },
     {
       "id": "briefing",
-      "status": "skipped",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:43:09+03:00",
-      "reason": "full mode self-briefing; user facts and external services are not invented",
-      "note": "Full mode: self briefing"
+      "status": "done",
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": "2026-11-13T03:00:44+03:00"
     },
     {
       "id": "spec",
       "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:43:09+03:00",
-      "note": ""
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": "2026-11-13T03:00:44+03:00"
     },
     {
       "id": "plan",
       "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "note": "",
-      "finishedAt": "2026-11-13T02:43:09+03:00"
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": "2026-11-13T03:00:44+03:00"
     },
     {
       "id": "build",
-      "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "note": "",
-      "finishedAt": "2026-11-13T02:46:50+03:00"
+      "status": "active",
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": null
     },
     {
       "id": "review",
-      "status": "done",
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "note": "",
-      "finishedAt": "2026-11-13T02:46:50+03:00"
+      "status": "pending",
+      "startedAt": "2026-11-13T03:00:44+03:00",
+      "finishedAt": null
     },
     {
       "id": "final",
-      "status": "failed",
-      "startedAt": "2026-11-13T02:46:50+03:00",
-      "finishedAt": "2026-11-13T02:46:50+03:00",
-      "note": "Partial acceptance: manual browser flows not verified."
+      "status": "pending",
+      "startedAt": null,
+      "finishedAt": null
     }
   ],
   "requirements": {
-    "total": 102,
-    "done": 95,
-    "inTicket": 0,
+    "total": 7,
+    "done": 0,
+    "inTicket": 7,
     "inSpec": 0,
     "placeholder": 0,
-    "deferred": 7,
+    "deferred": 0,
     "dropped": 0
   },
   "tickets": [
     {
-      "id": "01",
-      "title": "Stages 00-03",
+      "id": "09",
+      "title": "text-processing-and-rag",
       "requirements": [
-        "R01",
-        "R02",
-        "R03"
+        "R01"
       ],
       "blockedBy": [],
       "wave": 1,
       "zone": [],
-      "status": "done",
-      "retries": 0,
+      "status": "review",
+      "startedAt": "2026-11-13T03:00:44+03:00",
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:46:50+03:00"
+      "tests": {
+        "passed": 321,
+        "failed": 0
+      },
+      "concerns": [
+        "Live RAG requires Stage 10 router and configured credentials."
+      ]
     },
     {
-      "id": "02",
-      "title": "Stages 04-06",
+      "id": "10",
+      "title": "ai-provider-routing",
       "requirements": [
-        "R01",
-        "R02",
-        "R03"
-      ],
-      "blockedBy": [],
-      "wave": 1,
-      "zone": [],
-      "status": "done",
-      "retries": 0,
-      "repairs": 0,
-      "handoffs": 0,
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:46:50+03:00"
-    },
-    {
-      "id": "03",
-      "title": "Stages 07-08",
-      "requirements": [
-        "R01",
-        "R02",
-        "R03"
-      ],
-      "blockedBy": [],
-      "wave": 1,
-      "zone": [],
-      "status": "done",
-      "retries": 0,
-      "repairs": 0,
-      "handoffs": 0,
-      "startedAt": "2026-11-13T02:43:09+03:00",
-      "finishedAt": "2026-11-13T02:46:50+03:00"
-    },
-    {
-      "id": "04",
-      "title": "Report and integration checks",
-      "requirements": [
-        "R04",
-        "R05"
+        "R01"
       ],
       "blockedBy": [
-        "01",
-        "02",
-        "03"
+        "09"
       ],
       "wave": 2,
       "zone": [],
-      "status": "done",
-      "retries": 0,
-      "repairs": 0,
-      "handoffs": 0,
+      "status": "pending",
       "startedAt": null,
-      "finishedAt": "2026-11-13T02:46:50+03:00"
+      "repairs": 0,
+      "handoffs": 0
+    },
+    {
+      "id": "11",
+      "title": "ai-analysis-and-proposals",
+      "requirements": [
+        "R01"
+      ],
+      "blockedBy": [
+        "10"
+      ],
+      "wave": 3,
+      "zone": [],
+      "status": "pending",
+      "startedAt": null,
+      "repairs": 0,
+      "handoffs": 0
+    },
+    {
+      "id": "12",
+      "title": "specification",
+      "requirements": [
+        "R01"
+      ],
+      "blockedBy": [
+        "11"
+      ],
+      "wave": 4,
+      "zone": [],
+      "status": "pending",
+      "startedAt": null,
+      "repairs": 0,
+      "handoffs": 0
+    },
+    {
+      "id": "13",
+      "title": "mvp-integration-and-hardening",
+      "requirements": [
+        "R01"
+      ],
+      "blockedBy": [
+        "12"
+      ],
+      "wave": 5,
+      "zone": [],
+      "status": "pending",
+      "startedAt": null,
+      "repairs": 0,
+      "handoffs": 0
     }
   ],
-  "singlePass": null,
-  "tests": {
-    "passed": 381,
-    "failed": 0
-  },
+  "tests": null,
   "debt": {
     "placeholders": [],
-    "assumptions": [
-      "Invitation tokens are sent only by email."
-    ],
+    "assumptions": [],
     "emptyEnv": []
   },
-  "additions": [],
-  "coverage": {
-    "found": 0,
-    "fixed": 0,
-    "deferred": 0
-  },
-  "concerns": [
-    "Two-user browser walkthrough, clean installation and volume persistence not verified."
-  ],
+  "concerns": [],
   "reviewers": {
-    "manifestSpec": "stage04_ms_reviewer",
-    "craft": "stage04_craft_reviewer"
+    "manifestSpec": "/root/spec_gate",
+    "craft": "/root/review09"
   },
-  "blind": {
-    "verdict": "partial",
-    "mismatches": [
-      "Two-user browser walkthrough and document lifecycle not verified manually."
-    ],
-    "commands": [
-      "Frontend, backend health and Vite proxy health returned HTTP 200."
-    ]
-  },
-  "triage": {
-    "fixed": [
-      "T08 missing WebSocket Origin validation; fixed in T11 commit 87c6b74.",
-      "T09 document page reset/query invalidation; fixed in T10 commit ab19730."
-    ],
-    "reported": [
-      "Test-coverage gaps retained in concerns.",
-      "Malware scanning requires a production scanner decision."
-    ],
-    "dropped": [
-      "Earlier OpenAPI invitation enum-name warning did not recur in final schema validation."
-    ]
+  "blind": null,
+  "coverage": {
+    "found": 2,
+    "fixed": 2,
+    "deferred": 0
   }
-};
+}

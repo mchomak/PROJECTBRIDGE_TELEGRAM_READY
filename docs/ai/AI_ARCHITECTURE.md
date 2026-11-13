@@ -1,7 +1,7 @@
 # ProjectBridge AI Architecture
 
-**Status:** Core design agreed; provider/model selection remains open  
-**Last updated:** 2026-11-11
+**Status:** Core design agreed; non-embedding provider/model selection remains open
+**Last updated:** 2026-11-13
 
 ## 1. Requirements
 
@@ -97,13 +97,29 @@ RAG is a pipeline, not a single model call.
 8.  Pass selected evidence to the task-specific generation model.
 9.  Return an answer or analysis with source references.
 
-The exact chunking strategy, similarity threshold, top-k values,
-reranking policy, and embedding model remain open.
+The initial embedding profile is OpenAI `text-embedding-3-small` with
+1536 dimensions. Chunks contain at most 1000 Unicode characters with 150
+characters of overlap. PDF chunks stay within a page and record the page
+number; DOCX chunks stay within a paragraph and record its index; TXT and
+Markdown chunks record character offsets. Retrieval uses cosine distance
+and returns the five nearest chunks by default, with an explicit
+project-member scope and active-document filter. There is no similarity
+cutoff or reranking in the MVP. A result is available only when the
+embedding service returns vectors from the same active profile, version,
+and model as the indexed chunks. Persisted profile versions keep
+retrieval from combining different profile revisions.
 
 ### Embedding compatibility
 
 Vectors from different embedding models or incompatible dimensions must
-not be mixed in the same active search index.
+not be mixed in the same active search index. The initial pgvector column
+is fixed at 1536 dimensions and has a cosine HNSW index. A same-dimension
+model change creates a new profile/model slice, re-embeds all eligible
+documents, and switches retrieval to that slice only after it is
+complete. A dimension change requires a shadow vector column or table,
+backfill and verification before switching; it must not truncate or
+reinterpret existing vectors. Retain the previous index until the new
+slice is ready for the MVP's controlled local rollout.
 
 Changing the embedding profile requires re-embedding documents and a
 controlled index migration/rebuild. Keep the old index available until

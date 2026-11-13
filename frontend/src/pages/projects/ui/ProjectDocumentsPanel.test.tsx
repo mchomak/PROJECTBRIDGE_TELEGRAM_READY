@@ -133,6 +133,7 @@ test('validates file extension and retains a failed upload for retry with progre
 
   renderPanel();
   expect(await screen.findByText('scope.txt')).toBeTruthy();
+  expect(screen.getByText('Queued · not searchable')).toBeTruthy();
 
   const input = screen.getByLabelText('Choose a document') as HTMLInputElement;
   fireEvent.change(input, {
@@ -186,7 +187,7 @@ test('validates file extension and retains a failed upload for retry with progre
   documents = [uploaded, ...documents];
 
   expect(await screen.findByText('scope.md uploaded. Processing is queued.')).toBeTruthy();
-  expect(await screen.findAllByText('Queued')).toHaveLength(2);
+  expect(await screen.findAllByText('Queued · not searchable')).toHaveLength(2);
   expect(await screen.findByText('scope.md')).toBeTruthy();
 });
 

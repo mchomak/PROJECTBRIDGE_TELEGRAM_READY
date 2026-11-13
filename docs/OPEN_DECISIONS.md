@@ -2,7 +2,7 @@
 
 **Purpose:** Track decisions that remain unresolved after the
 architecture discussion.  
-**Last updated:** 2026-11-12
+**Last updated:** 2026-11-13
 
 Items not marked resolved must be resolved before the corresponding
 implementation is considered complete. Resolved entries remain here as
@@ -85,14 +85,27 @@ silently.
 
 10. **Providers and models:** Select initial providers and model
     identifiers for every task profile.
-11. **Embedding dimension:** Select the first embedding model and vector
-    dimension before finalizing pgvector migrations.
-12. **Embedding migration:** Define the rollout procedure when the
-    embedding model changes.
-13. **Chunking:** Choose chunk size, overlap, metadata, and
-    parser-specific rules.
-14. **Retrieval:** Choose similarity metric, top-k, metadata filters,
-    reranking policy, and thresholds.
+11. **Embedding dimension — resolved for Stage 09 on 2026-11-13:** The
+    initial `document_embedding` profile uses OpenAI
+    `text-embedding-3-small` with 1536 dimensions. Credentials remain
+    external configuration and are not required for local tests.
+12. **Embedding migration — resolved for Stage 09 on 2026-11-13:**
+    Same-dimension model changes use a separate profile/version/model slice and
+    switch retrieval only after the eligible documents are re-embedded.
+    Dimension changes use a versioned shadow column or table, verified
+    backfill, and explicit cutover. The active search never mixes vector
+    spaces.
+13. **Chunking — resolved for Stage 09 on 2026-11-13:** Chunks are at
+    most 1000 Unicode characters with 150 characters overlap. PDF chunks
+    do not cross pages, DOCX chunks do not cross paragraphs or table
+    cells, and text or Markdown chunks record character offsets. Chunk
+    rows have stable per-document ordering and source metadata.
+14. **Retrieval — resolved for Stage 09 on 2026-11-13:** Use cosine
+    distance and return five nearest chunks by default, with a maximum of
+    20. Require active project membership, filter to the current project
+    and active/ready documents, and require an exact profile/version/model
+    match.
+    Do not apply a score cutoff or reranking in the MVP.
 15. **Fallback:** Define compatible fallback profiles, timeout behavior,
     and retry limits.
 16. **Triggers:** Finalize which events trigger automatic AI analysis
@@ -132,10 +145,13 @@ silently.
     for remaining endpoints. Stage 04 invitation list/create/revoke
     schemas and error codes are defined in `api/API_CONTRACT.md`.
 25. **Password reset:** Define the reset flow.
-26. **Document parser libraries:** Select maintained PDF, DOCX, TXT, and
-    Markdown parsers.
-27. **Scanned PDFs:** Confirm user-facing behavior when a PDF contains
-    no extractable text.
+26. **Document parser libraries — resolved for Stage 09 on 2026-11-13:**
+    Pin pypdf 5.4.0 for PDF and python-docx 1.1.2 for DOCX. Decode TXT
+    and Markdown as UTF-8, UTF-16, or UTF-32 with a BOM; other encodings
+    fail visibly instead of being guessed.
+27. **Scanned PDFs — resolved for Stage 09 on 2026-11-13:** A valid PDF
+    with no extractable text layer is marked `unsupported`; a malformed
+    PDF is marked `failed`. OCR remains out of scope.
 28. **Malware scanning:** Select a scanner and deployment approach
     before public production.
 

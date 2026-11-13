@@ -62,15 +62,26 @@ returns without extraction. Stage 09 owns the processing worker and
 subsequent transitions:
 
 1.  Enqueue processing after the database transaction commits.
-2.  Extract text using a format-specific parser.
-3.  Split extracted text into chunks.
+2.  Extract text using pypdf for PDF, python-docx for DOCX, and strict
+    UTF-8/UTF-16/UTF-32 decoding for TXT and Markdown. OCR is not used.
+3.  Split extracted text into chunks of at most 1000 Unicode characters
+    with 150 characters of overlap. Chunks do not cross PDF pages or
+    DOCX paragraphs/table cells; source offsets are stored as metadata.
 4.  Store DocumentChunk records.
-5.  Generate embeddings using the active embedding profile.
-6.  Store vectors in pgvector.
+5.  Generate embeddings through the AI Router's `document_embedding`
+    task using `text-embedding-3-small` (1536 dimensions).
+6.  Store vectors in pgvector with cosine HNSW indexing.
 7.  Mark the document ready or failed/unsupported.
 
 The upload request must not wait for extraction, embedding, or AI
-analysis to finish.
+analysis to finish. The Celery task is queued only after the upload
+transaction commits and has a 180-second soft and 240-second hard time
+limit. Before `ZipFile` builds its member list, DOCX ZIP64 archives,
+archives with more than 10,000 entries, or central directories over 2
+MiB are rejected. DOCX content is limited to 50 MiB uncompressed, PDF
+files to 5000 pages, and extracted text to 2 million characters. These
+limits are processing safeguards, not changes to the 20 MiB upload
+limit.
 
 The frontend reads document processing status through the document API.
 
@@ -86,8 +97,20 @@ immediately.
 When a document is restored, its existing chunks and embeddings may be
 re-enabled if they remain valid and have not been purged.
 
-A document whose processing failed remains visible to participants with
-its failure status; it must not be silently treated as searchable.
+A scanned/image-only PDF with no text layer is marked `unsupported`;
+malformed files or processing/provider errors are marked `failed`. A
+missing embedding configuration leaves extracted chunks stored but does
+not create vectors or mark the document ready. A document whose
+processing failed remains visible to participants with its failure
+status; it must not be silently treated as searchable.
+
+Retrieval embeds the query using the same active profile/version/model
+tuple as the stored vectors, uses cosine distance, and returns the five
+nearest chunks by default without a score cutoff or reranking. Only the current
+project's active member and documents in `active` lifecycle state with
+`ready` processing status are eligible. Evidence identifies the document
+and chunk and carries its filename, page/paragraph/character location,
+and source text.
 
 ## 6. Lifecycle states
 

@@ -33,11 +33,11 @@ function formatFileSize(size: number): string {
 }
 
 function processingLabel(status: ProjectDocument['processing_status']): string {
-  if (status === 'queued') return 'Queued';
-  if (status === 'processing') return 'Processing';
-  if (status === 'ready') return 'Ready';
-  if (status === 'failed') return 'Processing failed';
-  return 'Unsupported';
+  if (status === 'queued') return 'Queued · not searchable';
+  if (status === 'processing') return 'Processing · not searchable';
+  if (status === 'ready') return 'Ready to search';
+  if (status === 'failed') return 'Processing failed · not searchable';
+  return 'Unsupported · not searchable';
 }
 
 function remainingTime(deadline: string, now: number): string {

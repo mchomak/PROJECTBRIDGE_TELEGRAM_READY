@@ -830,7 +830,12 @@ def test_due_sweep_cleans_document_content_and_is_safe_to_retry_after_project_ar
 ):
     from apps.common.models import ProjectAuditLog
     from apps.documents import services as document_services
-    from apps.documents.models import Document, DocumentLifecycleRequest
+    from apps.documents.models import (
+        Document,
+        DocumentChunk,
+        DocumentEmbedding,
+        DocumentLifecycleRequest,
+    )
     from apps.projects.models import ProjectMember, ProjectMemberRole
     from apps.projects.services import archive_project, create_project
 
@@ -853,6 +858,18 @@ def test_due_sweep_cleans_document_content_and_is_safe_to_retry_after_project_ar
     upload = _upload(executor_client, executor_csrf, project, "source.txt", contents)
     document = Document.objects.get(pk=upload.data["id"])
     storage_key = document.storage_key
+    chunk = DocumentChunk.objects.create(
+        document=document,
+        chunk_index=0,
+        content="derived content to remove",
+        metadata={"start_char": 0, "end_char": 25},
+    )
+    DocumentEmbedding.objects.create(
+        chunk=chunk,
+        embedding_profile_key="document_embedding",
+        model_name="text-embedding-3-small",
+        embedding=[1.0, *([0.0] * 1535)],
+    )
 
     archive_request = executor_client.post(
         f"/api/v1/documents/{document.pk}/lifecycle-requests/",
@@ -904,6 +921,8 @@ def test_due_sweep_cleans_document_content_and_is_safe_to_retry_after_project_ar
     )
 
     assert not default_storage.exists(storage_key)
+    assert not DocumentChunk.objects.filter(document=document).exists()
+    assert not DocumentEmbedding.objects.filter(chunk__document=document).exists()
     assert document.lifecycle_status == "deleted"
     assert document.original_filename == ""
     assert document.mime_type == ""

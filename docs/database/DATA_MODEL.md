@@ -18,8 +18,9 @@ finalized before migrations
   indiscriminately.
 - Indexes: add indexes for foreign keys, project-scoped lists, status
   filters, and common sort orders.
-- Vector search: pgvector. The embedding dimension and index strategy
-  must be selected with the initial embedding model.
+- Vector search: pgvector. The initial `text-embedding-3-small` profile
+  uses 1536 dimensions and cosine HNSW indexing. Dimension changes need
+  a versioned shadow column/table and completed backfill before cutover.
 
 ## 2. Accounts
 
@@ -409,20 +410,29 @@ deletion audit trail. No deleted content is written to audit metadata.
 
 ### `DocumentChunk`
 
-Fields: `id`, `document_id`, `chunk_index`, `content`, `page_number`,
-`metadata` JSONB, `created_at`.
+Fields: `id`, `document_id`, `chunk_index`, `content`, nullable
+`page_number`, `metadata` JSONB, `created_at`. Text chunks are at most
+1000 Unicode characters with 150 characters of overlap. PDF metadata
+records character offsets within the page; DOCX body paragraphs record
+paragraph index and offsets, while table paragraphs record table, row,
+cell, paragraph indexes, and offsets; TXT/Markdown metadata records
+document character offsets.
 
 Constraint: unique `(document_id, chunk_index)`.
 
 ### `DocumentEmbedding`
 
-Fields: `id`, `chunk_id`, `embedding_profile_key`, `model_name`,
-`embedding` vector, `created_at`.
+Fields: `id`, `chunk_id`, `embedding_profile_key`,
+`embedding_profile_version`, `model_name`, `embedding` vector(1536),
+`created_at`.
 
-The active embedding profile must have a consistent vector dimension. A
-model/dimension change requires re-embedding and a controlled index
-rebuild or a separate versioned index. Do not mix incompatible vector
-spaces in one search index.
+The active embedding profile must have a consistent vector dimension.
+The MVP index uses a cosine HNSW index and a unique
+`(chunk_id, embedding_profile_key, embedding_profile_version, model_name)`
+key. Retrieval filters to one active profile/version/model tuple, so a
+same-dimension model can be backfilled alongside the current slice. A dimension change requires a versioned
+shadow column/table, completed backfill and verification, and an explicit
+cutover. Do not mix incompatible vector spaces in one search operation.
 
 ### `DocumentLifecycleRequest`
 
@@ -670,6 +680,7 @@ Before creating production migrations, finalize:
 - required/nullable fields and defaults;
 - exact status choices and transitions;
 - deletion and retention constraints;
-- embedding model and vector dimension;
+- versioned embedding migrations when changing the selected 1536-dimension
+  `text-embedding-3-small` profile;
 - indexes based on actual query patterns;
 - project and account deletion policy.

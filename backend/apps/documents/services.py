@@ -1,9 +1,7 @@
 import hashlib
-import io
 import logging
 import unicodedata
 import uuid
-import zipfile
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import PurePosixPath
@@ -16,6 +14,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.common.services import record_project_action
+from apps.documents.docx_safety import DocxArchiveError, docx_archive_names
 from apps.projects.models import (
     Project,
     ProjectMember,
@@ -114,9 +113,8 @@ def _detected_mime_type(contents):
         return "application/pdf"
 
     try:
-        with zipfile.ZipFile(io.BytesIO(contents)) as archive:
-            names = set(archive.namelist())
-    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile):
+        names = docx_archive_names(contents)
+    except (DocxArchiveError, OSError):
         names = set()
 
     if "[Content_Types].xml" in names and "word/document.xml" in names:
@@ -200,7 +198,7 @@ def upload_document(*, project_id, actor, file):
                 f"documents/{project.pk}/{uuid.uuid4()}",
                 ContentFile(contents),
             )
-            return Document.objects.create(
+            document = Document.objects.create(
                 project=project,
                 uploaded_by=actor,
                 original_filename=filename,
@@ -210,6 +208,14 @@ def upload_document(*, project_id, actor, file):
                 storage_key=storage_key,
                 lifecycle_status=DocumentLifecycleStatus.ACTIVE,
             )
+            from apps.documents.tasks import process_project_document
+
+            transaction.on_commit(
+                lambda document_id=str(document.pk): process_project_document.delay(
+                    document_id
+                )
+            )
+            return document
     except Exception:
         if storage_key is not None:
             try:
@@ -574,6 +580,7 @@ def process_expired_deletions():
                 continue
 
             default_storage.delete(document.storage_key)
+            document.chunks.all().delete()
             document.original_filename = ""
             document.mime_type = ""
             document.file_size = 0

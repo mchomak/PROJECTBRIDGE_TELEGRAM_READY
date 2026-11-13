@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from pgvector.django import HnswIndex, VectorField
 
 
 class DocumentLifecycleStatus(models.TextChoices):
@@ -152,5 +153,65 @@ class DocumentLifecycleApproval(models.Model):
             models.CheckConstraint(
                 condition=Q(decision__in=DocumentLifecycleDecision.values),
                 name="document_lifecycle_decision_valid",
+            ),
+        ]
+
+
+class DocumentChunk(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="chunks",
+    )
+    chunk_index = models.PositiveIntegerField()
+    content = models.TextField()
+    page_number = models.PositiveIntegerField(blank=True, null=True)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("chunk_index", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("document", "chunk_index"),
+                name="unique_document_chunk_order",
+            ),
+        ]
+
+
+class DocumentEmbedding(models.Model):
+    DIMENSIONS = 1536
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chunk = models.ForeignKey(
+        DocumentChunk,
+        on_delete=models.CASCADE,
+        related_name="embeddings",
+    )
+    embedding_profile_key = models.CharField(max_length=64)
+    embedding_profile_version = models.PositiveIntegerField(default=1)
+    model_name = models.CharField(max_length=128)
+    embedding = VectorField(dimensions=DIMENSIONS)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "chunk",
+                    "embedding_profile_key",
+                    "embedding_profile_version",
+                    "model_name",
+                ),
+                name="unique_chunk_embedding_profile_model",
+            ),
+        ]
+        indexes = [
+            HnswIndex(
+                name="document_embedding_cosine_hnsw",
+                fields=("embedding",),
+                opclasses=("vector_cosine_ops",),
             ),
         ]
