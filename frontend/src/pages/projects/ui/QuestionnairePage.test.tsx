@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import type { QuestionnaireSubmission } from '../../../entities/questionnaire';
 import { afterEach, expect, test, vi } from 'vitest';
@@ -176,33 +176,33 @@ test('customer starts, branches, saves, and resumes the schema-authored question
   });
   renderPage(fetchMock);
 
-  expect(await screen.findByRole('heading', { name: 'Customer questionnaire' })).toBeTruthy();
-  expect(await screen.findByText('Website · version 1')).toBeTruthy();
-  expect(screen.getByText('No draft has been started yet.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Start questionnaire' }));
+  expect(await screen.findByRole('heading', { name: 'Анкета заказчика' })).toBeTruthy();
+  expect(await screen.findByText('Сайт · версия 1')).toBeTruthy();
+  expect(screen.getByText('Черновик ещё не создан.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Заполнить анкету' }));
 
-  expect(await screen.findByLabelText(/What is the main goal/)).toHaveProperty(
+  expect(await screen.findByLabelText(/Какова главная цель/)).toHaveProperty(
     'value',
     'Passport goal',
   );
-  expect(screen.getAllByText('From passport')).toHaveLength(2);
+  expect(screen.getAllByText('Из паспорта')).toHaveLength(2);
   expect(screen.queryByLabelText('Which services?')).toBeNull();
-  expect(screen.queryByLabelText(/Existing website address/)).toBeNull();
+  expect(screen.queryByLabelText(/Какой адрес существующего сайта/)).toBeNull();
 
-  fireEvent.change(screen.getByLabelText(/Does a site already exist/), {
+  fireEvent.change(screen.getByLabelText(/Нужно обновить или заменить существующий сайт/), {
     target: { value: 'true' },
   });
-  expect(await screen.findByLabelText(/Existing website address/)).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(/What is the main goal/), {
+  expect(await screen.findByLabelText(/Какой адрес существующего сайта/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(/Какова главная цель/), {
     target: { value: 'Customer goal' },
   });
-  fireEvent.change(screen.getByLabelText(/Existing website address/), {
+  fireEvent.change(screen.getByLabelText(/Какой адрес существующего сайта/), {
     target: { value: 'https://example.com' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
 
-  expect(await screen.findByText('Draft saved.')).toBeTruthy();
-  expect(screen.getByLabelText(/What is the main goal/)).toHaveProperty('value', 'Customer goal');
+  expect(await screen.findByText('Черновик сохранён.')).toBeTruthy();
+  expect(screen.getByLabelText(/Какова главная цель/)).toHaveProperty('value', 'Customer goal');
 });
 
 test('customer keeps local answers after a recoverable draft save error and can retry', async () => {
@@ -237,15 +237,49 @@ test('customer keeps local answers after a recoverable draft save error and can 
   });
   renderPage(fetchMock);
 
-  const goal = await screen.findByLabelText(/What is the main goal/);
+  const goal = await screen.findByLabelText(/Какова главная цель/);
   fireEvent.change(goal, { target: { value: 'Unsaved goal' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
-  expect(await screen.findByText('Try again.')).toBeTruthy();
-  expect(screen.getByLabelText(/What is the main goal/)).toHaveProperty('value', 'Unsaved goal');
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
+  expect(await screen.findByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  expect(screen.getByLabelText(/Какова главная цель/)).toHaveProperty('value', 'Unsaved goal');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Try save again' }));
-  expect(await screen.findByText('Draft saved.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить сохранение' }));
+  expect(await screen.findByText('Черновик сохранён.')).toBeTruthy();
   expect(saves).toBe(2);
+});
+
+test('select and boolean questions describe their validation errors', async () => {
+  const draft = submission([]);
+  const schema = questionnaireSchema();
+  schema.questions.push({ key: 'trigger_type', label: 'Trigger', type: 'select', required: true });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === `/api/v1/projects/${projectId}/`)
+      return jsonResponse({ id: projectId, status: 'active', project_type: 'website' });
+    if (path === `/api/v1/projects/${projectId}/members/`)
+      return jsonResponse([{ user_id: customerId, role: 'customer' }]);
+    if (path === `/api/v1/projects/${projectId}/questionnaire/`)
+      return jsonResponse({ schema, submission: draft, history: [draft] });
+    if (path === `/api/v1/questionnaire/submissions/${draft.id}/answers/`)
+      return jsonResponse(
+        { detail: 'Invalid', errors: { has_integrations: ['Required'], trigger_type: ['Required'] } },
+        400,
+      );
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  renderPage(fetchMock);
+  await screen.findByLabelText(/Нужны ли интеграции/);
+  fireEvent.change(screen.getByLabelText(/Какова главная цель/), { target: { value: 'Goal' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
+  await waitFor(() => {
+    for (const name of [/Нужны ли интеграции/, /Trigger/]) {
+      const field = screen.getByLabelText(name);
+      const errorId = field.getAttribute('aria-describedby');
+      expect(errorId).toBeTruthy();
+      if (!errorId) throw new Error('The field has no error description.');
+      expect(document.getElementById(errorId)).toBeTruthy();
+    }
+  });
 });
 
 test('customer confirms prefilled answers and sees the submitted version locked', async () => {
@@ -285,17 +319,17 @@ test('customer confirms prefilled answers and sees the submitted version locked'
   });
   renderPage(fetchMock);
 
-  expect(await screen.findByRole('heading', { name: 'Customer questionnaire' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Анкета заказчика' })).toBeTruthy();
   const confirm = await screen.findByRole('checkbox', {
-    name: /confirm the answers prefilled from the passport/i,
+    name: /подтверждаю ответы, заполненные из паспорта/i,
   });
-  const submit = screen.getByRole('button', { name: 'Submit answers' }) as HTMLButtonElement;
+  const submit = screen.getByRole('button', { name: 'Отправить ответы' }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
   fireEvent.click(confirm);
   fireEvent.click(submit);
 
-  expect(await screen.findByText('Submitted. Answers are locked.')).toBeTruthy();
-  expect(screen.queryByLabelText(/What is the main goal/)).toBeNull();
+  expect(await screen.findByText('Ответы отправлены и заблокированы для изменений.')).toBeTruthy();
+  expect(screen.queryByLabelText(/Какова главная цель/)).toBeNull();
   expect(screen.getByText('Passport goal')).toBeTruthy();
 });
 
@@ -361,20 +395,22 @@ test('customer refreshes a stale draft version without losing answers before ret
   });
   renderPage(fetchMock);
 
-  const goal = await screen.findByLabelText(/What is the main goal/);
+  const goal = await screen.findByLabelText(/Какова главная цель/);
   fireEvent.change(goal, { target: { value: 'Reviewed goal' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Submit answers' }));
-  expect(await screen.findByText(/Your draft is safe/)).toBeTruthy();
-  expect(screen.getByLabelText(/What is the main goal/)).toHaveProperty('value', 'Reviewed goal');
-
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh draft version' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить ответы' }));
   expect(
-    await screen.findByText('Draft version refreshed. Review your answers and submit again.'),
+    await screen.findByText(/Паспорт проекта изменился после создания черновика/),
   ).toBeTruthy();
-  expect(screen.getByLabelText(/What is the main goal/)).toHaveProperty('value', 'Reviewed goal');
-  fireEvent.click(screen.getByRole('button', { name: 'Submit answers' }));
+  expect(screen.getByLabelText(/Какова главная цель/)).toHaveProperty('value', 'Reviewed goal');
 
-  expect(await screen.findByText('Submitted. Answers are locked.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Обновить версию черновика' }));
+  expect(
+    await screen.findByText('Версия черновика обновлена. Проверьте ответы и отправьте их снова.'),
+  ).toBeTruthy();
+  expect(screen.getByLabelText(/Какова главная цель/)).toHaveProperty('value', 'Reviewed goal');
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить ответы' }));
+
+  expect(await screen.findByText('Ответы отправлены и заблокированы для изменений.')).toBeTruthy();
   expect(submitCalls).toBe(2);
 });
 
@@ -393,8 +429,8 @@ test('executor sees conflicts, keeps the passport value, and can request a corre
       submission_id: submitted.id,
       question_key: 'goal',
       mapped_field: 'goal',
-      passport_value: 'Executor goal',
-      answer_value: 'Customer goal',
+      passport_value: 'Executor goal' as unknown,
+      answer_value: 'Customer goal' as unknown,
       status: 'pending',
       decision: null,
       reviewed_by_id: null,
@@ -402,6 +438,13 @@ test('executor sees conflicts, keeps the passport value, and can request a corre
       resolved_at: null,
     },
   ];
+  conflicts.push({
+    ...conflicts[0],
+    id: 'boolean-conflict',
+    question_key: 'has_existing_site',
+    passport_value: true,
+    answer_value: false,
+  });
   const conflictId = conflicts[0].id;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
@@ -448,10 +491,16 @@ test('executor sees conflicts, keeps the passport value, and can request a corre
   });
   renderPage(fetchMock, executor);
 
+  expect(await screen.findByText('Да')).toBeTruthy();
+  expect(screen.getAllByRole('heading', { name: 'Цель проекта' })).toHaveLength(2);
+  expect(screen.getByText('Нет')).toBeTruthy();
   expect(await screen.findByText('Executor goal')).toBeTruthy();
   expect(screen.getAllByText('Customer goal')).toHaveLength(2);
-  fireEvent.click(screen.getByRole('button', { name: 'Keep passport value' }));
-  expect(await screen.findByText('No unresolved questionnaire conflicts.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Request correction' }));
-  expect(await screen.findAllByText('Correction draft')).toHaveLength(2);
+  const keepButton = screen.getAllByRole('button', { name: 'Оставить значение паспорта' })[0];
+  await waitFor(() => expect(keepButton).toHaveProperty('disabled', false));
+  fireEvent.click(keepButton);
+  await waitFor(() => expect(screen.queryByText('Executor goal')).toBeNull());
+  expect(screen.getByText('Да')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Запросить исправления' }));
+  expect(await screen.findAllByText('Черновик исправлений')).toHaveLength(2);
 });

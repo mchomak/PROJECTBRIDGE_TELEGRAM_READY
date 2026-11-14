@@ -13,52 +13,52 @@ import { ApiError, getApiFieldErrors } from '../../../shared/api';
 function previewErrorState(error: unknown): { title: string; detail: string } {
   if (!(error instanceof ApiError)) {
     return {
-      title: 'We couldn’t check this invitation',
-      detail: 'Check your connection and try again.',
+      title: 'Не удалось проверить приглашение',
+      detail: 'Проверьте подключение и попробуйте снова.',
     };
   }
 
   switch (error.payload?.code) {
     case 'invitation_expired':
       return {
-        title: 'This invitation has expired',
-        detail: 'Ask the project executor to send a new invitation.',
+        title: 'Срок действия приглашения истёк',
+        detail: 'Попросите исполнителя отправить новое приглашение.',
       };
     case 'invitation_revoked':
       return {
-        title: 'This invitation was revoked',
-        detail: 'Ask the project executor for a new invitation.',
+        title: 'Приглашение отозвано',
+        detail: 'Попросите исполнителя отправить новое приглашение.',
       };
     case 'project_completed':
       return {
-        title: 'This project is complete',
-        detail: 'Completed projects cannot accept new customers.',
+        title: 'Проект завершён',
+        detail: 'В завершённый проект нельзя пригласить нового заказчика.',
       };
     case 'project_archived':
       return {
-        title: 'This project is archived',
-        detail: 'Archived projects cannot accept new customers.',
+        title: 'Проект в архиве',
+        detail: 'В архивный проект нельзя пригласить нового заказчика.',
       };
     case 'not_found':
       return {
-        title: 'This invitation link is invalid',
-        detail: 'Open the invitation link from the email you received.',
+        title: 'Ссылка приглашения недействительна',
+        detail: 'Откройте ссылку приглашения из полученного письма.',
       };
     case 'conflict':
       return {
-        title: 'This invitation can’t be accepted',
-        detail: 'The invitation or project may have changed. Ask the project executor for help.',
+        title: 'Не удалось принять приглашение',
+        detail: 'Возможно, приглашение или проект изменились. Обратитесь к исполнителю.',
       };
     default:
       if (error.status === 429) {
         return {
-          title: 'Too many invitation checks',
-          detail: 'Wait a little while, then try again.',
+          title: 'Слишком много проверок приглашения',
+          detail: 'Подождите немного и попробуйте снова.',
         };
       }
       return {
-        title: 'We couldn’t check this invitation',
-        detail: error.message || 'Check your connection and try again.',
+        title: 'Не удалось проверить приглашение',
+        detail: error.message || 'Проверьте подключение и попробуйте снова.',
       };
   }
 }
@@ -66,8 +66,8 @@ function previewErrorState(error: unknown): { title: string; detail: string } {
 function acceptanceErrorState(error: unknown): { title: string; detail: string } {
   if (error instanceof ApiError && error.status === 429) {
     return {
-      title: 'Too many acceptance attempts',
-      detail: 'Wait a little while, then try again.',
+      title: 'Слишком много попыток принятия',
+      detail: 'Подождите немного и попробуйте снова.',
     };
   }
   return previewErrorState(error);
@@ -178,16 +178,16 @@ export function InvitationPage() {
       <section className="auth-card invitation-card" aria-labelledby="invitation-title">
         {!tokenReady ? (
           <p className="state-message" role="status">
-            Opening invitation…
+            Открываем приглашение…
           </p>
         ) : !tokenLoaded ? (
           <>
-            <h1 id="invitation-title">Invitation link not found</h1>
-            <p>Open the invitation link from the email you received.</p>
+            <h1 id="invitation-title">Ссылка приглашения не найдена</h1>
+            <p>Откройте ссылку приглашения из полученного письма.</p>
           </>
         ) : invitation.isPending ? (
           <p className="state-message" role="status">
-            Checking invitation…
+            Проверяем приглашение…
           </p>
         ) : invitation.isError ? (
           <>
@@ -198,47 +198,49 @@ export function InvitationPage() {
               onClick={() => void invitation.refetch()}
               type="button"
             >
-              Try again
+              Попробовать снова
             </button>
           </>
         ) : invitation.data ? (
           <>
             <h1 id="invitation-title">
               {invitation.data.status === 'accepted'
-                ? `You’re already invited to ${invitation.data.project_name}`
-                : `You’re invited to ${invitation.data.project_name}`}
+                ? `Вы уже приглашены в проект «${invitation.data.project_name}»`
+                : `Вас пригласили в проект «${invitation.data.project_name}»`}
             </h1>
             <p>
-              Invitation for <strong>{invitation.data.email_hint}</strong>. Expires{' '}
+              Приглашение для <strong>{invitation.data.email_hint}</strong>. Действует до{' '}
               {new Date(invitation.data.expires_at).toLocaleString()}.
             </p>
 
             {currentUser.isPending && (
               <p className="state-message" role="status">
-                Checking your sign-in…
+                Проверяем вход…
               </p>
             )}
 
             {currentUser.isError && !signedOut && (
               <div className="state-message state-message--error" role="alert">
-                <p>We couldn’t check your sign-in.</p>
+                <p>Не удалось проверить вход в аккаунт.</p>
                 <p>{currentUser.error.message}</p>
                 <button
                   className="button button--secondary"
                   onClick={() => void currentUser.refetch()}
                   type="button"
                 >
-                  Try again
+                  Попробовать снова
                 </button>
               </div>
             )}
 
             {signedOut && (
               <>
-                <h2>{authMode === 'login' ? 'Log in to accept' : 'Create an account'}</h2>
+                <h2>
+                  {authMode === 'login' ? 'Войдите, чтобы принять приглашение' : 'Создать аккаунт'}
+                </h2>
                 {registrationMessage && <p role="status">{registrationMessage}</p>}
                 <form onSubmit={submitCredentials} noValidate>
-                  <label htmlFor="invitation-email">Email</label>
+                  <label htmlFor="invitation-email">Электронная почта</label>
                   <input
                     autoComplete="email"
                     id="invitation-email"
@@ -253,7 +255,7 @@ export function InvitationPage() {
                       {message}
                     </p>
                   ))}
-                  <label htmlFor="invitation-password">Password</label>
+                  <label htmlFor="invitation-password">Пароль</label>
                   <input
                     autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
                     id="invitation-password"
@@ -278,21 +280,21 @@ export function InvitationPage() {
                   >
                     {login.isPending || register.isPending
                       ? authMode === 'login'
-                        ? 'Logging in…'
-                        : 'Creating account…'
+                        ? 'Вход…'
+                        : 'Создание аккаунта…'
                       : authMode === 'login'
-                        ? 'Log in'
-                        : 'Create account'}
+                        ? 'Войти'
+                        : 'Создать аккаунт'}
                   </button>
                 </form>
                 <p>
-                  {authMode === 'login' ? 'New to ProjectBridge?' : 'Already have an account?'}{' '}
+                  {authMode === 'login' ? 'Впервые в ProjectBridge?' : 'Уже есть аккаунт?'}{' '}
                   <button
                     className="button button--secondary"
                     onClick={() => switchAuthMode(authMode === 'login' ? 'register' : 'login')}
                     type="button"
                   >
-                    {authMode === 'login' ? 'Create an account' : 'Log in'}
+                    {authMode === 'login' ? 'Создать аккаунт' : 'Войти'}
                   </button>
                 </p>
               </>
@@ -300,18 +302,20 @@ export function InvitationPage() {
 
             {currentUser.data && !currentUser.data.email_verified && (
               <section aria-labelledby="verify-invited-email-title">
-                <h2 id="verify-invited-email-title">Verify your email to continue</h2>
-                <p>Accepting requires a verified account for the invited email address.</p>
+                <h2 id="verify-invited-email-title">
+                  Подтвердите адрес электронной почты, чтобы продолжить
+                </h2>
+                <p>Для принятия приглашения подтвердите адрес, на который оно отправлено.</p>
                 <button
                   className="button button--secondary"
                   disabled={resendVerification.isPending}
                   onClick={() => resendVerification.mutate({ email: currentUser.data.email })}
                   type="button"
                 >
-                  {resendVerification.isPending ? 'Sending…' : 'Resend verification email'}
+                  {resendVerification.isPending ? 'Отправка…' : 'Отправить письмо повторно'}
                 </button>
                 {resendVerification.isSuccess && (
-                  <p role="status">Check your inbox for the verification email.</p>
+                  <p role="status">Проверьте почту: мы отправили письмо для подтверждения.</p>
                 )}
                 {resendVerification.isError && (
                   <p role="alert">{resendVerification.error.message}</p>
@@ -321,7 +325,7 @@ export function InvitationPage() {
                   onClick={() => void currentUser.refetch()}
                   type="button"
                 >
-                  I’ve verified my email
+                  Я подтвердил адрес
                 </button>
               </section>
             )}
@@ -331,8 +335,8 @@ export function InvitationPage() {
                 {acceptingError === 'email_mismatch' && (
                   <div className="state-message state-message--error" role="alert">
                     <p>
-                      This invitation belongs to {invitation.data.email_hint}. Sign in with that
-                      verified email.
+                      Это приглашение предназначено для {invitation.data.email_hint}. Sign in with
+                      that verified email.
                     </p>
                     <button
                       className="button button--secondary"
@@ -340,19 +344,19 @@ export function InvitationPage() {
                       onClick={() => logout.mutate()}
                       type="button"
                     >
-                      {logout.isPending ? 'Signing out…' : 'Use another account'}
+                      {logout.isPending ? 'Выход…' : 'Использовать другой аккаунт'}
                     </button>
                   </div>
                 )}
                 {acceptingError === 'email_unverified' && (
                   <div role="alert">
-                    <p>Verify the email address on this account before accepting the invitation.</p>
+                    <p>Подтвердите адрес этого аккаунта, прежде чем принять приглашение.</p>
                     <button
                       className="button button--secondary"
                       onClick={() => void currentUser.refetch()}
                       type="button"
                     >
-                      I’ve verified my email
+                      Я подтвердил адрес
                     </button>
                   </div>
                 )}
@@ -372,10 +376,10 @@ export function InvitationPage() {
                     type="button"
                   >
                     {acceptance.isPending
-                      ? 'Accepting…'
+                      ? 'Принимаем приглашение…'
                       : invitation.data.status === 'accepted'
-                        ? 'Open project'
-                        : 'Accept invitation'}
+                        ? 'Открыть проект'
+                        : 'Принять приглашение'}
                   </button>
                 )}
               </>

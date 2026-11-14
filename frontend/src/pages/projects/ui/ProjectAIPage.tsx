@@ -23,22 +23,53 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return 'Not available yet';
+  if (!value) return 'Пока недоступно';
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
 }
 
 function statusLabel(status: string): string {
-  return status.replaceAll('_', ' ');
+  const labels: Record<string, string> = {
+    planned: 'Запланирован',
+    active: 'Активен',
+    blocked: 'Заблокирован',
+    completed: 'Завершён',
+    cancelled: 'Отменён',
+    draft: 'Черновик',
+    confirmed: 'Подтверждено',
+    rejected: 'Отклонено',
+    in_progress: 'В работе',
+    todo: 'К выполнению',
+    done: 'Выполнено',
+    open: 'Открыт',
+    resolved: 'Разрешён',
+    dismissed: 'Отклонён',
+    unresolved: 'Не разрешён',
+    archived: 'В архиве',
+    pending: 'Ожидает',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    failed: 'Ошибка',
+    succeeded: 'Завершён',
+    accepted: 'Принято',
+    applied: 'Применено',
+    discarded: 'Отклонён',
+    generated: 'Создано',
+    published: 'Опубликовано',
+    needs_review: 'Требует проверки',
+  };
+  return labels[status] ?? status.replaceAll('_', ' ');
 }
 
 function requestLabel(request: AIAnalysisRequest): string {
-  if (request.status === 'failed') return request.error_code || 'Analysis failed';
-  if (request.status === 'succeeded') {
-    return `${request.result_count} ${request.result_count === 1 ? 'proposal' : 'proposals'}`;
+  if (request.status === 'failed') {
+    return request.error_code ? `Ошибка анализа (код: ${request.error_code})` : 'Ошибка анализа';
   }
-  return request.status === 'queued' ? 'Waiting to start' : 'Analysis in progress';
+  if (request.status === 'succeeded') {
+    return `Предложений: ${request.result_count}`;
+  }
+  return request.status === 'queued' ? 'Ожидает запуска' : 'Идёт анализ';
 }
 
 function dispatchWarning(request: AIAnalysisRequest): string | null {
@@ -48,17 +79,17 @@ function dispatchWarning(request: AIAnalysisRequest): string | null {
   ) {
     return null;
   }
-  return 'This analysis is waiting for processing. The system will keep retrying; it has not started yet.';
+  return 'Анализ ожидает обработки. Система продолжит попытки запуска.';
 }
 
 function sourceLabel(sourceType: string): string {
   const labels: Record<string, string> = {
-    questionnaire_answer: 'Questionnaire answer',
-    message: 'Chat message',
-    document_chunk: 'Document excerpt',
-    passport: 'Project passport',
+    questionnaire_answer: 'Ответ анкеты',
+    message: 'Сообщение чата',
+    document_chunk: 'Фрагмент документа',
+    passport: 'Паспорт проекта',
   };
-  return labels[sourceType] ?? 'Project source';
+  return labels[sourceType] ?? 'Источник проекта';
 }
 
 function sourceDetails(proposal: AIProposal, sourceId: string): string[] {
@@ -80,13 +111,13 @@ function AnalysisHistory({ requests }: { requests: AIAnalysisRequest[] }) {
     <section aria-labelledby="ai-history-title" className="ai-history">
       <div className="ai-section-heading">
         <div>
-          <p className="ai-eyebrow">Recent activity</p>
-          <h2 id="ai-history-title">Analysis history</h2>
+          <p className="ai-eyebrow">Последние действия</p>
+          <h2 id="ai-history-title">История анализов</h2>
         </div>
         <span className="ai-count">{requests.length}</span>
       </div>
       {requests.length === 0 ? (
-        <p className="ai-empty-inline">No analyses have been started for this project.</p>
+        <p className="ai-empty-inline">Анализ этого проекта ещё не запускался.</p>
       ) : (
         <ol className="ai-history-list">
           {requests.map((request) => (
@@ -139,11 +170,11 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
     try {
       payload = JSON.parse(draft) as unknown;
     } catch {
-      setDraftError('Enter valid JSON before applying this edit.');
+      setDraftError('Введите корректный JSON перед применением изменений.');
       return;
     }
     if (!isObject(payload)) {
-      setDraftError('The edited payload must be a JSON object.');
+      setDraftError('Изменённые данные должны быть объектом JSON.');
       return;
     }
     setDraftError(null);
@@ -164,14 +195,16 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
       {proposal.description && <p className="ai-proposal-description">{proposal.description}</p>}
       {proposal.rationale && (
         <div className="ai-rationale">
-          <strong>Why it was suggested</strong>
+          <strong>Причина предложения</strong>
           <p>{proposal.rationale}</p>
         </div>
       )}
-      <section aria-label="Proposal evidence" className="ai-evidence-list">
-        <h4>Evidence</h4>
+      <section aria-label="Источники предложения" className="ai-evidence-list">
+        <h4>Источники</h4>
         {proposal.evidence.length === 0 ? (
-          <p className="ai-empty-inline">This proposal has no linked source excerpts.</p>
+          <p className="ai-empty-inline">
+            К этому предложению не прикреплены фрагменты источников.
+          </p>
         ) : (
           proposal.evidence.map((evidence) => (
             <figure className="ai-evidence" key={evidence.id}>
@@ -193,7 +226,9 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
         <div className="ai-proposal-actions">
           {editing ? (
             <form className="ai-edit-form" onSubmit={submitEdited}>
-              <label htmlFor={`payload-${proposal.id}`}>Edit proposed Project State data</label>
+              <label htmlFor={`payload-${proposal.id}`}>
+                Изменить предложенные данные состояния проекта
+              </label>
               <textarea
                 id={`payload-${proposal.id}`}
                 rows={8}
@@ -208,7 +243,7 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
               )}
               {applyEdited.error && (
                 <p className="form-error" role="alert">
-                  {applyEdited.error.message || 'The edited proposal could not be applied.'}
+                  {applyEdited.error.message || 'Не удалось применить изменённое предложение.'}
                 </p>
               )}
               <div className="ai-action-buttons">
@@ -217,14 +252,14 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
                   disabled={applyEdited.isPending}
                   type="submit"
                 >
-                  {applyEdited.isPending ? 'Applying…' : 'Apply edited proposal'}
+                  {applyEdited.isPending ? 'Applying…' : 'Применить изменённое предложение'}
                 </button>
                 <button
                   className="button button--quiet"
                   onClick={() => setEditing(false)}
                   type="button"
                 >
-                  Cancel edit
+                  Отменить редактирование
                 </button>
               </div>
             </form>
@@ -233,7 +268,7 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
               {actionError && (
                 <p className="form-error" role="alert">
                   {actionError.message ||
-                    'This proposal could not be updated. Review the evidence and try again.'}
+                    'Не удалось обновить предложение. Проверьте источники и попробуйте снова.'}
                 </p>
               )}
               <div className="ai-action-buttons">
@@ -243,7 +278,7 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
                   onClick={() => accept.mutate()}
                   type="button"
                 >
-                  {accept.isPending ? 'Applying…' : 'Accept and apply'}
+                  {accept.isPending ? 'Applying…' : 'Принять и применить'}
                 </button>
                 <button
                   className="button button--secondary"
@@ -251,7 +286,7 @@ function ProposalCard({ proposal, projectId }: { proposal: AIProposal; projectId
                   onClick={() => setEditing(true)}
                   type="button"
                 >
-                  Edit first
+                  Сначала изменить
                 </button>
                 <button
                   className="button button--quiet"
@@ -311,18 +346,18 @@ export function ProjectAIPage() {
           className="state-message state-message--error"
           aria-labelledby="ai-page-error-title"
         >
-          <h1 id="ai-page-error-title">We couldn’t open AI review</h1>
+          <h1 id="ai-page-error-title">Не удалось открыть проверку ИИ</h1>
           <p>
             {error instanceof ApiError && error.status === 404
-              ? 'This project is unavailable to your account.'
-              : error?.message || 'Check your connection and try again.'}
+              ? 'Проект недоступен вашему аккаунту.'
+              : error?.message || 'Проверьте подключение и попробуйте снова.'}
           </p>
           <button
             className="button button--secondary"
             onClick={() => void retryWorkspace()}
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>
@@ -338,7 +373,7 @@ export function ProjectAIPage() {
     return (
       <main className="workspace-page">
         <p className="state-message" role="status">
-          Loading AI review…
+          Загрузка проверки ИИ…
         </p>
       </main>
     );
@@ -348,7 +383,7 @@ export function ProjectAIPage() {
     return (
       <main className="workspace-page workspace-page--narrow">
         <p className="state-message state-message--error" role="alert">
-          Your active project membership could not be confirmed.
+          Не удалось подтвердить ваше участие в проекте.
         </p>
       </main>
     );
@@ -365,15 +400,15 @@ export function ProjectAIPage() {
   return (
     <main className="workspace-page project-ai-page">
       <Link className="back-link" to={`/app/projects/${projectId}`}>
-        ← Back to project
+        ← К проекту
       </Link>
       <header className="project-ai-heading">
         <div>
-          <p className="ai-eyebrow">Executor workspace</p>
-          <h1>AI analysis and proposals</h1>
+          <p className="ai-eyebrow">Рабочее пространство исполнителя</p>
+          <h1>Анализ и предложения ИИ</h1>
           <p>
-            Start an analysis when you need one. Suggestions remain private until you review and
-            apply them.
+            Запускайте анализ при необходимости. Предложения видны только вам до проверки и
+            применения.
           </p>
         </div>
         <button
@@ -383,33 +418,33 @@ export function ProjectAIPage() {
           type="button"
         >
           {start.isPending
-            ? 'Starting analysis…'
+            ? 'Запуск анализа…'
             : hasActiveRequest
-              ? 'Analysis in progress'
-              : 'Analyze project'}
+              ? 'Идёт анализ'
+              : 'Анализировать проект'}
         </button>
       </header>
       <p className="ai-manual-note">
-        Analyses run only when you start them. Project messages, questionnaire answers, and
-        documents do not start one automatically.
+        Анализ запускается только вручную. Сообщения, ответы анкеты и документы не запускают его
+        автоматически.
       </p>
       {start.error && (
         <div className="ai-page-alert" role="alert">
-          <p>{start.error.message || 'The analysis request could not be queued.'}</p>
+          <p>{start.error.message || 'Не удалось поставить запрос анализа в очередь.'}</p>
           <button className="button button--secondary" onClick={startAnalysis} type="button">
-            Retry this request
+            Повторить запрос
           </button>
         </div>
       )}
       {dataError && (
         <div className="ai-page-alert" role="alert">
-          <p>{dataError.message || 'AI review data could not be loaded.'}</p>
+          <p>{dataError.message || 'Не удалось загрузить данные для проверки ИИ.'}</p>
           <button
             className="button button--secondary"
             onClick={() => void retryWorkspace()}
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </div>
       )}
@@ -418,24 +453,23 @@ export function ProjectAIPage() {
         <section aria-labelledby="ai-proposals-title" className="ai-inbox">
           <div className="ai-section-heading">
             <div>
-              <p className="ai-eyebrow">Review before applying</p>
-              <h2 id="ai-proposals-title">Proposal inbox</h2>
+              <p className="ai-eyebrow">Проверка перед применением</p>
+              <h2 id="ai-proposals-title">Предложения на проверку</h2>
             </div>
             <span className="ai-count">{pendingProposals.length} pending</span>
           </div>
           {isLoading ? (
             <p className="ai-empty-inline" role="status">
-              Loading proposals…
+              Загрузка предложений…
             </p>
           ) : proposals.length === 0 ? (
             <div className="ai-empty-state">
               <span aria-hidden="true" className="ai-empty-state__mark">
                 ✦
               </span>
-              <h3>No proposals to review</h3>
+              <h3>Нет предложений для проверки</h3>
               <p>
-                When an analysis finds a supported change or possible conflict, it will appear here
-                with its source evidence.
+                Здесь появятся найденные изменения и возможные противоречия вместе с источниками.
               </p>
             </div>
           ) : (

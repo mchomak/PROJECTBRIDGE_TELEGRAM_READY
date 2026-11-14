@@ -160,12 +160,14 @@ test('project list paginates and requests the next page', async () => {
   renderProjectPage('/app/projects', 'list');
 
   expect(await screen.findByRole('link', { name: /Client portal/ })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByText('2 проекта')).toBeTruthy();
+  expect(screen.getByText(/Обновлён/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Далее' }));
   expect(await screen.findByRole('link', { name: /Mobile app/ })).toBeTruthy();
   expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
     '/api/v1/projects/?page=2',
   );
-  expect(screen.getByText('Page 2')).toBeTruthy();
+  expect(screen.getByText('Страница 2')).toBeTruthy();
 });
 
 test('executor manages invitation status and can recover from a server validation error', async () => {
@@ -267,31 +269,33 @@ test('executor manages invitation status and can recover from a server validatio
     mockEmptyInvitations: false,
   });
 
-  expect(await screen.findByRole('heading', { name: 'Project invitations' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Приглашения в проект' })).toBeTruthy();
   expect(await screen.findByText('pending@example.com')).toBeTruthy();
   for (const [email, label] of [
-    ['pending@example.com', 'Pending'],
-    ['expired@example.com', 'Expired'],
-    ['accepted@example.com', 'Accepted'],
-    ['revoked@example.com', 'Revoked'],
+    ['pending@example.com', 'Ожидает ответа'],
+    ['expired@example.com', 'Истекло'],
+    ['accepted@example.com', 'Принято'],
+    ['revoked@example.com', 'Отозвано'],
   ]) {
     expect(screen.getByText(email)).toBeTruthy();
     expect(screen.getByText(label, { exact: true })).toBeTruthy();
   }
 
-  const emailInput = screen.getByLabelText('Customer email') as HTMLInputElement;
+  const emailInput = screen.getByLabelText('Почта заказчика') as HTMLInputElement;
   fireEvent.change(emailInput, { target: { value: 'new@example.com' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
-  expect(await screen.findByText('This email already has an active invitation.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить приглашение' }));
+  expect(await screen.findByText('Проверьте значение этого поля.')).toBeTruthy();
   expect(emailInput.value).toBe('new@example.com');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
-  expect(await screen.findByText('Invitation sent to new@example.com.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить приглашение' }));
+  expect(await screen.findByText('Приглашение отправлено на new@example.com.')).toBeTruthy();
   expect(await screen.findByText('new@example.com')).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Revoke invitation to pending@example.com' }));
-  expect(await screen.findByText('Invitation to pending@example.com revoked.')).toBeTruthy();
-  expect(screen.getAllByText('Revoked', { exact: true })).toHaveLength(2);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Отозвать приглашение для pending@example.com' }),
+  );
+  expect(await screen.findByText('Приглашение для pending@example.com отозвано.')).toBeTruthy();
+  expect(screen.getAllByText('Отозвано', { exact: true })).toHaveLength(2);
 });
 
 test('executor can reach and revoke an older invitation on the next page', async () => {
@@ -355,11 +359,13 @@ test('executor can reach and revoke an older invitation on the next page', async
   });
 
   expect(await screen.findByText('newest@example.com')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Next invitations' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Следующие приглашения' }));
   expect(await screen.findByText('older@example.com')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Revoke invitation to older@example.com' }));
-  expect(await screen.findByText('Invitation to older@example.com revoked.')).toBeTruthy();
-  expect(screen.getByText('Revoked', { exact: true })).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Отозвать приглашение для older@example.com' }),
+  );
+  expect(await screen.findByText('Приглашение для older@example.com отозвано.')).toBeTruthy();
+  expect(screen.getByText('Отозвано', { exact: true })).toBeTruthy();
 });
 
 test('archive list filters for archived projects and has a distinct empty state', async () => {
@@ -370,8 +376,8 @@ test('archive list filters for archived projects and has a distinct empty state'
   vi.stubGlobal('fetch', fetchMock);
   renderProjectPage('/app/projects/archive', 'archive');
 
-  expect(await screen.findByRole('heading', { name: 'No archived projects' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Back to projects' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Нет архивных проектов' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'К проектам' })).toBeTruthy();
 });
 
 test('project list keeps a retry action after a temporary server failure', async () => {
@@ -395,8 +401,8 @@ test('project list keeps a retry action after a temporary server failure', async
   vi.stubGlobal('fetch', fetchMock);
   renderProjectPage('/app/projects', 'list');
 
-  expect(await screen.findByText('Projects are temporarily unavailable.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }));
   expect(await screen.findByRole('link', { name: /Client portal/ })).toBeTruthy();
   expect(attempts).toBe(4);
 });
@@ -420,7 +426,7 @@ test('project creation validates input, offers exactly four types, and retains v
   vi.stubGlobal('fetch', fetchMock);
   renderProjectPage('/app/projects/new', 'create');
 
-  const typeSelect = screen.getByLabelText('Project type') as HTMLSelectElement;
+  const typeSelect = screen.getByLabelText('Тип проекта') as HTMLSelectElement;
   expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
     '',
     'website',
@@ -428,19 +434,21 @@ test('project creation validates input, offers exactly four types, and retains v
     'automation',
     'other',
   ]);
-  fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
-  expect(await screen.findByText('Enter a project name.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Создать проект' }));
+  expect(await screen.findByText('Введите название проекта.')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 
-  fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Portal refresh' } });
+  fireEvent.change(screen.getByLabelText('Название проекта'), {
+    target: { value: 'Portal refresh' },
+  });
   fireEvent.change(typeSelect, { target: { value: 'telegram_bot' } });
-  fireEvent.change(screen.getByLabelText(/Description/), { target: { value: 'A support bot' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  fireEvent.change(screen.getByLabelText(/Описание/), { target: { value: 'A support bot' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Создать проект' }));
 
-  expect(await screen.findByText('A project with this name already exists.')).toBeTruthy();
-  expect(screen.getByLabelText('Project name')).toHaveProperty('value', 'Portal refresh');
-  expect(screen.getByLabelText('Project type')).toHaveProperty('value', 'telegram_bot');
-  expect(screen.getByLabelText(/Description/)).toHaveProperty('value', 'A support bot');
+  expect(await screen.findByText('Проверьте значение этого поля.')).toBeTruthy();
+  expect(screen.getByLabelText('Название проекта')).toHaveProperty('value', 'Portal refresh');
+  expect(screen.getByLabelText('Тип проекта')).toHaveProperty('value', 'telegram_bot');
+  expect(screen.getByLabelText(/Описание/)).toHaveProperty('value', 'A support bot');
 });
 
 test('project creation sends the chosen type and opens the created project', async () => {
@@ -463,9 +471,11 @@ test('project creation sends the chosen type and opens the created project', asy
   vi.stubGlobal('fetch', fetchMock);
   renderProjectPage('/app/projects/new', 'create');
 
-  fireEvent.change(screen.getByLabelText('Project name'), { target: { value: ' Support bot ' } });
-  fireEvent.change(screen.getByLabelText('Project type'), { target: { value: 'telegram_bot' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  fireEvent.change(screen.getByLabelText('Название проекта'), {
+    target: { value: ' Support bot ' },
+  });
+  fireEvent.change(screen.getByLabelText('Тип проекта'), { target: { value: 'telegram_bot' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Создать проект' }));
 
   expect(await screen.findByRole('heading', { name: 'Created project overview' })).toBeTruthy();
 });
@@ -485,28 +495,28 @@ test('customer sees project metadata and the passport as read-only', async () =>
 
   expect(await screen.findByRole('heading', { name: 'Client portal' })).toBeTruthy();
   expect(await screen.findByText('Launch a customer portal')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Open questionnaire' }).getAttribute('href')).toBe(
+  expect(screen.getByRole('link', { name: 'Открыть анкету' }).getAttribute('href')).toBe(
     `/app/projects/${projectId}/questionnaire`,
   );
   for (const field of [
-    'Goal',
-    'Target audience',
-    'Expected result',
-    'Functional scope',
-    'Integrations',
-    'Constraints',
-    'Deadline',
-    'Budget minimum',
-    'Budget maximum',
-    'Currency',
-    'Additional data',
+    'Цель',
+    'Целевая аудитория',
+    'Ожидаемый результат',
+    'Функциональность',
+    'Интеграции',
+    'Ограничения',
+    'Срок',
+    'Минимальный бюджет',
+    'Максимальный бюджет',
+    'Валюта',
+    'Дополнительные данные',
   ]) {
     expect(screen.getByText(field)).toBeTruthy();
   }
-  expect(screen.queryByRole('button', { name: 'Save project details' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Save passport' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Complete project' })).toBeNull();
-  expect(screen.getByText('Read only')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Сохранить данные проекта' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Сохранить паспорт' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Завершить проект' })).toBeNull();
+  expect(screen.getByText('Только просмотр')).toBeTruthy();
 });
 
 test('executor actions follow project status and update the overview after completion', async () => {
@@ -529,20 +539,20 @@ test('executor actions follow project status and update the overview after compl
   vi.stubGlobal('fetch', fetchMock);
   renderProjectPage(`/app/projects/${projectId}`);
 
-  expect(await screen.findByRole('button', { name: 'Complete project' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Archive project' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Complete project' }));
+  expect(await screen.findByRole('button', { name: 'Завершить проект' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'В архив' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Завершить проект' }));
 
-  expect(await screen.findByRole('button', { name: 'Reopen project' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Archive project' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Complete project' })).toBeNull();
-  expect(screen.getByText('Completed')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Save passport' })).toBeNull();
+  expect(await screen.findByRole('button', { name: 'Возобновить проект' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'В архив' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Завершить проект' })).toBeNull();
+  expect(screen.getByText('Завершён')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Сохранить паспорт' })).toBeNull();
 });
 
 test.each([
-  { status: 'draft' as const, actions: ['Archive project'], canEdit: true },
-  { status: 'archived' as const, actions: ['Restore project'], canEdit: false },
+  { status: 'draft' as const, actions: ['В архив'], canEdit: true },
+  { status: 'archived' as const, actions: ['Восстановить проект'], canEdit: false },
 ])(
   'executor sees status-appropriate actions for $status projects',
   async ({ status, actions, canEdit }) => {
@@ -562,12 +572,12 @@ test.each([
     for (const action of actions) {
       expect(await screen.findByRole('button', { name: action })).toBeTruthy();
     }
-    expect(screen.queryByRole('button', { name: 'Complete project' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reopen project' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Restore project' }) !== null).toBe(
-      actions.includes('Restore project'),
+    expect(screen.queryByRole('button', { name: 'Завершить проект' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Возобновить проект' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Восстановить проект' }) !== null).toBe(
+      actions.includes('Восстановить проект'),
     );
-    if (!canEdit) expect(screen.queryByRole('button', { name: 'Save passport' })).toBeNull();
+    if (!canEdit) expect(screen.queryByRole('button', { name: 'Сохранить паспорт' })).toBeNull();
   },
 );
 
@@ -608,7 +618,7 @@ test('a background passport refetch cannot upgrade an in-progress draft version'
   vi.stubGlobal('fetch', fetchMock);
   const { queryClient } = renderProjectPage(`/app/projects/${projectId}`);
 
-  fireEvent.change(await screen.findByLabelText('Goal'), { target: { value: 'My unsaved edit' } });
+  fireEvent.change(await screen.findByLabelText('Цель'), { target: { value: 'My unsaved edit' } });
 
   await act(async () => {
     await queryClient.refetchQueries({ queryKey: projectQueryKeys.passport(projectId) });
@@ -617,23 +627,21 @@ test('a background passport refetch cannot upgrade an in-progress draft version'
   expect(
     queryClient.getQueryData<ProjectPassport>(projectQueryKeys.passport(projectId))?.version,
   ).toBe(2);
-  expect(screen.getByLabelText('Goal')).toHaveProperty('value', 'My unsaved edit');
-  expect(screen.getByText('Version 1')).toBeTruthy();
+  expect(screen.getByLabelText('Цель')).toHaveProperty('value', 'My unsaved edit');
+  expect(screen.getByText('Версия 1')).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Save passport' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить паспорт' }));
 
-  expect(
-    await screen.findByRole('heading', { name: 'This passport changed on the server' }),
-  ).toBeTruthy();
-  expect(screen.getByLabelText('Goal')).toHaveProperty('value', 'My unsaved edit');
+  expect(await screen.findByRole('heading', { name: 'Паспорт изменился на сервере' })).toBeTruthy();
+  expect(screen.getByLabelText('Цель')).toHaveProperty('value', 'My unsaved edit');
   expect(passportReads).toBe(2);
-  fireEvent.click(screen.getByRole('button', { name: 'Reload latest passport' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Загрузить последнюю версию паспорта' }));
 
   await waitFor(() => expect(passportReads).toBe(3));
-  expect(screen.getByText('Version 2')).toBeTruthy();
-  expect(await screen.findByLabelText('Goal')).toHaveProperty(
+  expect(screen.getByText('Версия 2')).toBeTruthy();
+  expect(await screen.findByLabelText('Цель')).toHaveProperty(
     'value',
     'Updated by another participant',
   );
-  expect(screen.queryByRole('heading', { name: 'This passport changed on the server' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Паспорт изменился на сервере' })).toBeNull();
 });

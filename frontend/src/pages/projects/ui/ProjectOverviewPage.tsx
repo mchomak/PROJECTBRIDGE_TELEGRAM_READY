@@ -45,7 +45,7 @@ type PassportDraft = {
 
 function projectTypeLabel(project: Project): string {
   return (
-    projectTypeOptions.find((option) => option.value === project.project_type)?.label ?? 'Other'
+    projectTypeOptions.find((option) => option.value === project.project_type)?.label ?? 'Другое'
   );
 }
 
@@ -78,26 +78,26 @@ function toPassportDraft(passport: ProjectPassport): PassportDraft {
 }
 
 function displayValue(value: string | null | undefined): string {
-  return value?.trim() ? value : 'Not provided';
+  return value?.trim() ? value : 'Не указано';
 }
 
 function projectActions(
   status: Project['status'],
 ): Array<{ action: LifecycleAction; label: string }> {
-  if (status === 'draft') return [{ action: 'archive', label: 'Archive project' }];
+  if (status === 'draft') return [{ action: 'archive', label: 'В архив' }];
   if (status === 'active') {
     return [
-      { action: 'complete', label: 'Complete project' },
-      { action: 'archive', label: 'Archive project' },
+      { action: 'complete', label: 'Завершить проект' },
+      { action: 'archive', label: 'В архив' },
     ];
   }
   if (status === 'completed') {
     return [
-      { action: 'reopen', label: 'Reopen project' },
-      { action: 'archive', label: 'Archive project' },
+      { action: 'reopen', label: 'Возобновить проект' },
+      { action: 'archive', label: 'В архив' },
     ];
   }
-  return [{ action: 'restore', label: 'Restore project' }];
+  return [{ action: 'restore', label: 'Восстановить проект' }];
 }
 
 function parseJsonField(
@@ -122,10 +122,10 @@ function MemberList({ members }: { members: ProjectMember[] }) {
         return (
           <li className="member-row" key={member.id}>
             <span className="member-row__name">
-              {fullName || (member.role === 'executor' ? 'Executor' : 'Customer')}
+              {fullName || (member.role === 'executor' ? 'Исполнитель' : 'Заказчик')}
             </span>
             <span className="member-row__role">
-              {member.role === 'executor' ? 'Executor' : 'Customer'}
+              {member.role === 'executor' ? 'Исполнитель' : 'Заказчик'}
             </span>
           </li>
         );
@@ -149,7 +149,7 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
     if (!draft) return;
     const trimmedName = draft.name.trim();
     if (!trimmedName) {
-      setClientError('Enter a project name.');
+      setClientError('Введите название проекта.');
       return;
     }
     setClientError(null);
@@ -163,21 +163,21 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
     );
   }
 
-  if (!draft) return <p role="status">Loading project details…</p>;
+  if (!draft) return <p role="status">Загрузка данных проекта…</p>;
 
   if (!canEdit) {
     return (
       <dl className="detail-list">
         <div>
-          <dt>Project name</dt>
+          <dt>Название проекта</dt>
           <dd>{project.name}</dd>
         </div>
         <div>
-          <dt>Type</dt>
+          <dt>Тип</dt>
           <dd>{projectTypeLabel(project)}</dd>
         </div>
         <div>
-          <dt>Description</dt>
+          <dt>Описание</dt>
           <dd>{displayValue(project.description)}</dd>
         </div>
       </dl>
@@ -187,7 +187,7 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
   return (
     <form className="detail-form" onSubmit={submit} noValidate>
       <div className="form-field">
-        <label htmlFor="overview-name">Project name</label>
+        <label htmlFor="overview-name">Название проекта</label>
         <input
           id="overview-name"
           maxLength={200}
@@ -208,7 +208,7 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
         ))}
       </div>
       <div className="form-field">
-        <label htmlFor="overview-type">Project type</label>
+        <label htmlFor="overview-type">Тип проекта</label>
         <select
           id="overview-type"
           onChange={(event) =>
@@ -225,7 +225,7 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
       </div>
       <div className="form-field">
         <label htmlFor="overview-description">
-          Description <span>(optional)</span>
+          Описание <span>(необязательно)</span>
         </label>
         <textarea
           id="overview-description"
@@ -242,12 +242,12 @@ function ProjectMetadata({ project, canEdit }: { project: Project; canEdit: bool
       {updateProject.error && Object.keys(fieldErrors).length === 0 && (
         <p className="form-error" role="alert">
           {updateProject.error.message ||
-            'We couldn’t save these details. Your edits are still here.'}
+            'Не удалось сохранить данные. Ваши изменения остались на странице.'}
         </p>
       )}
       <div className="form-actions form-actions--end">
         <button className="button button--primary" disabled={updateProject.isPending} type="submit">
-          {updateProject.isPending ? 'Saving…' : 'Save project details'}
+          {updateProject.isPending ? 'Сохранение…' : 'Сохранить данные проекта'}
         </button>
       </div>
     </form>
@@ -281,7 +281,9 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
       setJsonErrors({});
       updatePassport.reset();
     } else {
-      setRefreshError('We couldn’t load the latest passport. Your unsaved values are still here.');
+      setRefreshError(
+        'Не удалось загрузить актуальный паспорт. Несохранённые данные остались на странице.',
+      );
     }
   }
 
@@ -343,7 +345,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
   if (passportQuery.isPending)
     return (
       <p className="state-message" role="status">
-        Loading passport…
+        Загрузка паспорта…
       </p>
     );
   if (passportQuery.isError) {
@@ -352,14 +354,14 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         className="state-message state-message--error"
         aria-labelledby="passport-error-title"
       >
-        <h3 id="passport-error-title">We couldn’t load the passport</h3>
-        <p>{passportQuery.error.message || 'Check your connection and try again.'}</p>
+        <h3 id="passport-error-title">Не удалось загрузить паспорт</h3>
+        <p>{passportQuery.error.message || 'Проверьте подключение и попробуйте снова.'}</p>
         <button
           className="button button--secondary"
           onClick={() => void passportQuery.refetch()}
           type="button"
         >
-          Try again
+          Попробовать снова
         </button>
       </section>
     );
@@ -367,7 +369,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
   if (!draft)
     return (
       <p className="state-message" role="status">
-        Loading passport details…
+        Загрузка данных паспорта…
       </p>
     );
 
@@ -375,56 +377,56 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
     const passport = passportQuery.data;
     return (
       <div className="passport-readonly">
-        <p className="passport-version">Version {passport.version}</p>
+        <p className="passport-version">Версия {passport.version}</p>
         <dl className="detail-list detail-list--passport">
           <div>
-            <dt>Goal</dt>
+            <dt>Цель</dt>
             <dd>{displayValue(passport.goal)}</dd>
           </div>
           <div>
-            <dt>Target audience</dt>
+            <dt>Целевая аудитория</dt>
             <dd>{displayValue(passport.target_audience)}</dd>
           </div>
           <div>
-            <dt>Expected result</dt>
+            <dt>Ожидаемый результат</dt>
             <dd>{displayValue(passport.expected_result)}</dd>
           </div>
           <div>
-            <dt>Functional scope</dt>
+            <dt>Функциональность</dt>
             <dd>
               <pre>{jsonText(passport.functional_scope)}</pre>
             </dd>
           </div>
           <div>
-            <dt>Integrations</dt>
+            <dt>Интеграции</dt>
             <dd>
               <pre>{jsonText(passport.integrations)}</pre>
             </dd>
           </div>
           <div>
-            <dt>Constraints</dt>
+            <dt>Ограничения</dt>
             <dd>
               <pre>{jsonText(passport.constraints)}</pre>
             </dd>
           </div>
           <div>
-            <dt>Deadline</dt>
+            <dt>Срок</dt>
             <dd>{displayValue(passport.deadline)}</dd>
           </div>
           <div>
-            <dt>Budget minimum</dt>
+            <dt>Минимальный бюджет</dt>
             <dd>{displayValue(passport.budget_min)}</dd>
           </div>
           <div>
-            <dt>Budget maximum</dt>
+            <dt>Максимальный бюджет</dt>
             <dd>{displayValue(passport.budget_max)}</dd>
           </div>
           <div>
-            <dt>Currency</dt>
+            <dt>Валюта</dt>
             <dd>{displayValue(passport.currency)}</dd>
           </div>
           <div>
-            <dt>Additional data</dt>
+            <dt>Дополнительные данные</dt>
             <dd>
               <pre>{jsonText(passport.additional_data)}</pre>
             </dd>
@@ -441,14 +443,14 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
 
   return (
     <form className="passport-form" onSubmit={submit} noValidate>
-      <p className="passport-version">Version {draftVersion ?? passportQuery.data.version}</p>
+      <p className="passport-version">Версия {draftVersion ?? passportQuery.data.version}</p>
       {hasConflict && (
         <div className="conflict-panel" role="alert">
           <div>
-            <h3>This passport changed on the server</h3>
+            <h3>Паспорт изменился на сервере</h3>
             <p>
-              Your edits are still here. Reload the latest version only when you’re ready to replace
-              them.
+              Изменения остались на странице. Загрузите последнюю версию, когда будете готовы их
+              заменить.
             </p>
           </div>
           <button
@@ -457,7 +459,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
             onClick={() => void refreshPassport()}
             type="button"
           >
-            {passportQuery.isFetching ? 'Loading…' : 'Reload latest passport'}
+            {passportQuery.isFetching ? 'Загрузка…' : 'Загрузить последнюю версию паспорта'}
           </button>
         </div>
       )}
@@ -468,7 +470,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
       )}
       <div className="passport-fields">
         <div className="form-field">
-          <label htmlFor="passport-goal">Goal</label>
+          <label htmlFor="passport-goal">Цель</label>
           <textarea
             id="passport-goal"
             onChange={(event) => changeField('goal', event.currentTarget.value)}
@@ -482,7 +484,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           ))}
         </div>
         <div className="form-field">
-          <label htmlFor="passport-target-audience">Target audience</label>
+          <label htmlFor="passport-target-audience">Целевая аудитория</label>
           <textarea
             id="passport-target-audience"
             onChange={(event) => changeField('target_audience', event.currentTarget.value)}
@@ -496,7 +498,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           ))}
         </div>
         <div className="form-field">
-          <label htmlFor="passport-expected-result">Expected result</label>
+          <label htmlFor="passport-expected-result">Ожидаемый результат</label>
           <textarea
             id="passport-expected-result"
             onChange={(event) => changeField('expected_result', event.currentTarget.value)}
@@ -511,7 +513,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         </div>
         <div className="form-field form-field--wide">
           <label htmlFor="passport-functional-scope">
-            Functional scope <span>(JSON)</span>
+            Функциональность <span>(JSON)</span>
           </label>
           <textarea
             id="passport-functional-scope"
@@ -528,7 +530,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         </div>
         <div className="form-field form-field--wide">
           <label htmlFor="passport-integrations">
-            Integrations <span>(JSON)</span>
+            Интеграции <span>(JSON)</span>
           </label>
           <textarea
             id="passport-integrations"
@@ -545,7 +547,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         </div>
         <div className="form-field form-field--wide">
           <label htmlFor="passport-constraints">
-            Constraints <span>(JSON)</span>
+            Ограничения <span>(JSON)</span>
           </label>
           <textarea
             id="passport-constraints"
@@ -561,7 +563,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           )}
         </div>
         <div className="form-field">
-          <label htmlFor="passport-deadline">Deadline</label>
+          <label htmlFor="passport-deadline">Срок</label>
           <input
             id="passport-deadline"
             onChange={(event) => changeField('deadline', event.currentTarget.value)}
@@ -575,7 +577,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           ))}
         </div>
         <div className="form-field">
-          <label htmlFor="passport-budget-min">Budget minimum</label>
+          <label htmlFor="passport-budget-min">Минимальный бюджет</label>
           <input
             id="passport-budget-min"
             inputMode="decimal"
@@ -590,7 +592,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           ))}
         </div>
         <div className="form-field">
-          <label htmlFor="passport-budget-max">Budget maximum</label>
+          <label htmlFor="passport-budget-max">Максимальный бюджет</label>
           <input
             id="passport-budget-max"
             inputMode="decimal"
@@ -606,7 +608,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         </div>
         <div className="form-field">
           <label htmlFor="passport-currency">
-            Currency <span>(optional)</span>
+            Валюта <span>(необязательно)</span>
           </label>
           <input
             id="passport-currency"
@@ -623,7 +625,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
         </div>
         <div className="form-field form-field--wide">
           <label htmlFor="passport-additional-data">
-            Additional data <span>(JSON)</span>
+            Дополнительные данные <span>(JSON)</span>
           </label>
           <textarea
             id="passport-additional-data"
@@ -642,7 +644,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
       {updatePassport.error && !hasConflict && Object.keys(fieldErrors).length === 0 && (
         <p className="form-error" role="alert">
           {updatePassport.error.message ||
-            'We couldn’t save the passport. Your edits are still here.'}
+            'Не удалось сохранить паспорт. Ваши изменения остались на странице.'}
         </p>
       )}
       <div className="form-actions form-actions--end">
@@ -651,7 +653,7 @@ function PassportPanel({ projectId, canEdit }: { projectId: string; canEdit: boo
           disabled={updatePassport.isPending || hasConflict}
           type="submit"
         >
-          {updatePassport.isPending ? 'Saving…' : 'Save passport'}
+          {updatePassport.isPending ? 'Сохранение…' : 'Сохранить паспорт'}
         </button>
       </div>
     </form>
@@ -678,11 +680,11 @@ export function ProjectOverviewPage() {
           className="state-message state-message--error"
           aria-labelledby="overview-error-title"
         >
-          <h1 id="overview-error-title">We couldn’t open this project</h1>
+          <h1 id="overview-error-title">Не удалось открыть проект</h1>
           <p>
             {error instanceof ApiError && error.status === 404
-              ? 'This project is unavailable to your account.'
-              : error?.message || 'Check your connection and try again.'}
+              ? 'Проект недоступен вашему аккаунту.'
+              : error?.message || 'Проверьте подключение и попробуйте снова.'}
           </p>
           <div className="form-actions">
             <button
@@ -690,10 +692,10 @@ export function ProjectOverviewPage() {
               onClick={() => void retryOverview()}
               type="button"
             >
-              Try again
+              Попробовать снова
             </button>
             <Link className="button button--secondary" to="/app/projects">
-              Back to projects
+              К проектам
             </Link>
           </div>
         </section>
@@ -710,7 +712,7 @@ export function ProjectOverviewPage() {
     return (
       <main className="workspace-page">
         <p className="state-message" role="status">
-          Loading project…
+          Загрузка проекта…
         </p>
       </main>
     );
@@ -722,10 +724,10 @@ export function ProjectOverviewPage() {
     return (
       <main className="workspace-page workspace-page--narrow">
         <section className="state-message state-message--error" role="alert">
-          <h1>Project access unavailable</h1>
-          <p>Your active project membership could not be confirmed.</p>
+          <h1>Нет доступа к проекту</h1>
+          <p>Не удалось подтвердить ваше участие в проекте.</p>
           <Link className="button button--secondary" to="/app/projects">
-            Back to projects
+            К проектам
           </Link>
         </section>
       </main>
@@ -750,39 +752,39 @@ export function ProjectOverviewPage() {
         className="back-link"
         to={project.status === 'archived' ? '/app/projects/archive' : '/app/projects'}
       >
-        {project.status === 'archived' ? '← Back to archive' : '← Back to projects'}
+        {project.status === 'archived' ? '← К архиву' : '← К проектам'}
       </Link>
       <div className="project-overview-heading">
         <div>
           <p className="project-overview-heading__type">{projectTypeLabel(project)}</p>
           <h1>{project.name}</h1>
           <p className="page-heading__description">
-            {project.description?.trim() || 'Project details and passport'}
+            {project.description?.trim() || 'Данные и паспорт проекта'}
           </p>
           <Link
             className="button button--secondary project-state-link"
             to={`/app/projects/${project.id}/state`}
           >
-            Open Project State
+            Открыть состояние проекта
           </Link>
           <Link
             className="button button--secondary project-state-link"
             to={`/app/projects/${project.id}/specification`}
           >
-            Open specification
+            Открыть спецификацию
           </Link>
           <Link
             className="button button--secondary project-state-link"
             to={`/app/projects/${project.id}/chat`}
           >
-            Open project chat
+            Открыть чат проекта
           </Link>
           {isExecutor && (
             <Link
               className="button button--secondary project-state-link"
               to={`/app/projects/${project.id}/ai`}
             >
-              Open AI analysis and proposals
+              Открыть анализ и предложения ИИ
             </Link>
           )}
         </div>
@@ -793,7 +795,7 @@ export function ProjectOverviewPage() {
 
       {lifecycle.error && (
         <p className="form-error" role="alert">
-          {lifecycle.error.message || 'The project status could not be changed.'}
+          {lifecycle.error.message || 'Не удалось изменить статус проекта.'}
         </p>
       )}
       {lifecycleMessage && (
@@ -802,7 +804,7 @@ export function ProjectOverviewPage() {
         </p>
       )}
       {actions.length > 0 && (
-        <section className="lifecycle-actions" aria-label="Project actions">
+        <section className="lifecycle-actions" aria-label="Действия с проектом">
           {actions.map(({ action, label }) => (
             <button
               className={
@@ -813,7 +815,7 @@ export function ProjectOverviewPage() {
               onClick={() => runLifecycleAction(action)}
               type="button"
             >
-              {lifecycle.isPending && lifecycle.variables === action ? 'Updating…' : label}
+              {lifecycle.isPending && lifecycle.variables === action ? 'Обновление…' : label}
             </button>
           ))}
         </section>
@@ -826,14 +828,14 @@ export function ProjectOverviewPage() {
         >
           <div className="section-heading">
             <div>
-              <h2 id="questionnaire-entry-title">Customer questionnaire</h2>
+              <h2 id="questionnaire-entry-title">Анкета заказчика</h2>
               <p className="section-heading__description">
-                Share the project details in a guided questionnaire.
+                Поделитесь информацией о проекте в анкете.
               </p>
             </div>
           </div>
           <Link className="button button--primary" to={`/app/projects/${project.id}/questionnaire`}>
-            {project.status === 'active' ? 'Open questionnaire' : 'View questionnaire'}
+            {project.status === 'active' ? 'Открыть анкету' : 'Посмотреть анкету'}
           </Link>
         </section>
       )}
@@ -842,16 +844,18 @@ export function ProjectOverviewPage() {
         <div className="overview-column">
           <section className="project-panel" aria-labelledby="project-details-title">
             <div className="section-heading">
-              <h2 id="project-details-title">Project details</h2>
-              {canEdit && <span className="section-heading__note">Executor can edit</span>}
+              <h2 id="project-details-title">Данные проекта</h2>
+              {canEdit && (
+                <span className="section-heading__note">Исполнитель может редактировать</span>
+              )}
             </div>
             <ProjectMetadata project={project} canEdit={canEdit} />
           </section>
 
           <section className="project-panel" aria-labelledby="participants-title">
             <div className="section-heading">
-              <h2 id="participants-title">Participants</h2>
-              <span className="section-heading__note">Active members</span>
+              <h2 id="participants-title">Участники</h2>
+              <span className="section-heading__note">Активные участники</span>
             </div>
             <MemberList members={membersQuery.data} />
           </section>
@@ -861,14 +865,14 @@ export function ProjectOverviewPage() {
         <section className="project-panel passport-panel" aria-labelledby="passport-title">
           <div className="section-heading">
             <div>
-              <h2 id="passport-title">Project passport</h2>
+              <h2 id="passport-title">Паспорт проекта</h2>
               <p className="section-heading__description">
                 {canEdit
-                  ? 'Keep the project brief current as you prepare the work.'
-                  : 'Shared project information for both participants.'}
+                  ? 'Обновляйте данные проекта по мере подготовки работы.'
+                  : 'Общая информация проекта для обоих участников.'}
               </p>
             </div>
-            {!canEdit && <span className="section-heading__note">Read only</span>}
+            {!canEdit && <span className="section-heading__note">Только просмотр</span>}
           </div>
           <PassportPanel projectId={project.id} canEdit={canEdit} />
         </section>

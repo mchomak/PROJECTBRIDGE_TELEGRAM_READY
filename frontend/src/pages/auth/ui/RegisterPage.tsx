@@ -32,9 +32,9 @@ export function RegisterPage() {
   return (
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="register-title">
-        <h1 id="register-title">Create an account</h1>
+        <h1 id="register-title">Создать аккаунт</h1>
         <form onSubmit={submit} noValidate>
-          <label htmlFor="register-email">Email</label>
+          <label htmlFor="register-email">Электронная почта</label>
           <input
             autoComplete="email"
             id="register-email"
@@ -50,7 +50,7 @@ export function RegisterPage() {
             </p>
           ))}
 
-          <label htmlFor="register-password">Password</label>
+          <label htmlFor="register-password">Пароль</label>
           <input
             autoComplete="new-password"
             id="register-password"
@@ -71,11 +71,11 @@ export function RegisterPage() {
           )}
 
           <button disabled={register.isPending} type="submit">
-            {register.isPending ? 'Creating account…' : 'Create account'}
+            {register.isPending ? 'Создание аккаунта…' : 'Создать аккаунт'}
           </button>
         </form>
         <p>
-          Already have an account? <Link to="/login">Log in</Link>
+          Уже есть аккаунт? <Link to="/login">Войти</Link>
         </p>
       </section>
     </main>

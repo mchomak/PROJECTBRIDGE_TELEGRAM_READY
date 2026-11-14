@@ -33,7 +33,7 @@ function ProtectedAppPage() {
   if (isPending) {
     return (
       <main>
-        <p role="status">Loading your account…</p>
+        <p role="status">Загрузка аккаунта…</p>
       </main>
     );
   }
@@ -46,10 +46,10 @@ function ProtectedAppPage() {
     return (
       <main>
         <section aria-labelledby="account-error-title">
-          <h1 id="account-error-title">We couldn’t load your account</h1>
-          <p role="alert">{error.message || 'Check your connection and try again.'}</p>
+          <h1 id="account-error-title">Не удалось загрузить аккаунт</h1>
+          <p role="alert">{error.message || 'Проверьте подключение и попробуйте снова.'}</p>
           <button onClick={() => void refetch()} type="button">
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>

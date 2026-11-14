@@ -12,14 +12,43 @@ import { ApiError } from '../../../shared/api';
 import './ProjectSpecificationPage.css';
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return 'Not available yet';
+  if (!value) return 'Пока недоступно';
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
 }
 
 function statusLabel(status: string): string {
-  return status.replaceAll('_', ' ');
+  const labels: Record<string, string> = {
+    planned: 'Запланирован',
+    active: 'Активен',
+    blocked: 'Заблокирован',
+    completed: 'Завершён',
+    cancelled: 'Отменён',
+    draft: 'Черновик',
+    confirmed: 'Подтверждено',
+    rejected: 'Отклонено',
+    in_progress: 'В работе',
+    todo: 'К выполнению',
+    done: 'Выполнено',
+    open: 'Открыт',
+    resolved: 'Разрешён',
+    dismissed: 'Отклонён',
+    unresolved: 'Не разрешён',
+    archived: 'В архиве',
+    pending: 'Ожидает',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    failed: 'Ошибка',
+    succeeded: 'Завершён',
+    accepted: 'Принято',
+    applied: 'Применено',
+    discarded: 'Отклонён',
+    generated: 'Создано',
+    published: 'Опубликовано',
+    needs_review: 'Требует проверки',
+  };
+  return labels[status] ?? status.replaceAll('_', ' ');
 }
 
 function generationFailureMessage(errorCode: string): string {
@@ -27,9 +56,9 @@ function generationFailureMessage(errorCode: string): string {
     return 'The approved passport and shared Project State exceed the 24,000-byte generation limit. Shorten long text or remove unnecessary detail, then try again.';
   }
   if (errorCode === 'queue_unavailable') {
-    return 'The generation worker could not be reached after several attempts. Your current draft was kept; you can start a new generation.';
+    return 'Не удалось связаться с обработчиком после нескольких попыток. Текущий черновик сохранён; можно запустить создание заново.';
   }
-  return 'The current draft was kept. Review the project sources and try generation again.';
+  return 'Текущий черновик сохранён. Проверьте источники проекта и попробуйте создать его снова.';
 }
 
 function useSpecificationDraft(specification: Specification | undefined) {
@@ -83,7 +112,7 @@ export function ProjectSpecificationPage() {
   if (projectQuery.isPending || membersQuery.isPending || specificationQuery.isPending) {
     return (
       <main className="workspace-page">
-        <p role="status">Loading project specification…</p>
+        <p role="status">Загрузка спецификации проекта…</p>
       </main>
     );
   }
@@ -93,8 +122,8 @@ export function ProjectSpecificationPage() {
     return (
       <main className="workspace-page">
         <section aria-labelledby="specification-error-title">
-          <h1 id="specification-error-title">We couldn’t load the specification</h1>
-          <p role="alert">{loadError.message || 'Check your connection and try again.'}</p>
+          <h1 id="specification-error-title">Не удалось загрузить спецификацию</h1>
+          <p role="alert">{loadError.message || 'Проверьте подключение и попробуйте снова.'}</p>
           <button
             className="button button--secondary"
             onClick={() =>
@@ -106,7 +135,7 @@ export function ProjectSpecificationPage() {
             }
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>
@@ -172,8 +201,8 @@ export function ProjectSpecificationPage() {
       onSuccess: (request) => {
         setGenerateMessage(
           request.status === 'queued' || request.status === 'running'
-            ? 'Generation queued. This page will update when the draft is ready.'
-            : `Generation ${statusLabel(request.status)}.`,
+            ? 'Создание поставлено в очередь. Страница обновится, когда черновик будет готов.'
+            : `Создание: ${statusLabel(request.status)}.`,
         );
       },
       onError: async (error) => {
@@ -192,15 +221,15 @@ export function ProjectSpecificationPage() {
   return (
     <main className="workspace-page project-specification-page">
       <Link className="back-link" to={`/app/projects/${project.id}`}>
-        ← Back to project
+        ← К проекту
       </Link>
       <header className="project-specification-heading">
         <div>
           <p className="project-specification-heading__eyebrow">{project.name}</p>
-          <h1>Project specification</h1>
+          <h1>Спецификация проекта</h1>
           <p>
-            One shared Markdown draft built from the project passport and shared Project State.
-            Unresolved questions and conflicts remain clearly marked.
+            Общий черновик Markdown на основе паспорта и состояния проекта. Неразрешённые вопросы и
+            противоречия остаются отмеченными.
           </p>
         </div>
         <span className={`specification-status specification-status--${specification.status}`}>
@@ -217,30 +246,30 @@ export function ProjectSpecificationPage() {
         >
           <strong>
             {generationDispatchUnavailable
-              ? 'Generation has not started'
+              ? 'Создание ещё не запущено'
               : isGenerating
                 ? generation.status === 'queued'
-                  ? 'Waiting for generation to start'
-                  : 'Generating specification'
+                  ? 'Ожидание начала создания'
+                  : 'Создание спецификации'
                 : generation.status === 'failed'
-                  ? 'Generation failed'
+                  ? 'Не удалось создать спецификацию'
                   : generation.status === 'superseded'
-                    ? 'Generation discarded'
+                    ? 'Результат создания отклонён'
                     : generation.status === 'succeeded'
-                      ? 'Latest generation completed'
-                      : 'Specification generation'}
+                      ? 'Последнее создание завершено'
+                      : 'Создание спецификации'}
           </strong>
           <span>
             {generationDispatchUnavailable
-              ? 'This generation is waiting for processing. The system will keep retrying; the current draft is unchanged.'
+              ? 'Создание ожидает обработки. Система продолжит попытки; текущий черновик не изменён.'
               : generation.status === 'queued'
                 ? `Request queued ${formatDate(generation.created_at)}. Waiting for a worker.`
                 : generation.status === 'failed'
                   ? generationFailureMessage(generation.error_code)
                   : generation.status === 'superseded'
                     ? generation.error_code === 'sources_changed'
-                      ? 'Project sources changed while generation was queued or running. Start a new generation to use the latest sources.'
-                      : 'The current draft changed during generation, so its result was discarded.'
+                      ? 'Источники проекта изменились во время создания. Запустите создание заново, чтобы использовать актуальные данные.'
+                      : 'Черновик изменился во время создания, поэтому результат отклонён.'
                     : generation.status === 'running'
                       ? `Started ${formatDate(generation.started_at)}.`
                       : `Completed ${formatDate(generation.completed_at)}.`}
@@ -255,7 +284,7 @@ export function ProjectSpecificationPage() {
       )}
       {generateSpecification.error && saveConflict !== 'generation_project_closed' && (
         <p className="specification-error" role="alert">
-          {generateSpecification.error.message || 'Generation could not be started.'}
+          {generateSpecification.error.message || 'Не удалось запустить создание.'}
         </p>
       )}
 
@@ -266,8 +295,8 @@ export function ProjectSpecificationPage() {
         >
           <div className="specification-panel-heading">
             <div>
-              <p className="specification-eyebrow">Editable draft</p>
-              <h2 id="specification-editor-title">Current specification</h2>
+              <p className="specification-eyebrow">Редактируемый черновик</p>
+              <h2 id="specification-editor-title">Текущая спецификация</h2>
             </div>
             <button
               className="button button--secondary"
@@ -275,14 +304,14 @@ export function ProjectSpecificationPage() {
               onClick={startGeneration}
               type="button"
             >
-              {generateSpecification.isPending || isGenerating ? 'Generating…' : 'Generate draft'}
+              {generateSpecification.isPending || isGenerating ? 'Generating…' : 'Создать черновик'}
             </button>
           </div>
 
           {isDirty && (
             <p className="specification-hint" role="status">
-              Save your edits before starting generation. Generation uses the latest saved draft
-              version.
+              Сохраните изменения перед созданием. Будет использована последняя сохранённая версия
+              черновика.
             </p>
           )}
           {saveConflict === 'stale' && (
@@ -290,21 +319,24 @@ export function ProjectSpecificationPage() {
               className="specification-conflict"
               aria-labelledby="specification-conflict-title"
             >
-              <h3 id="specification-conflict-title">This specification changed on the server</h3>
-              <p>Your unsaved text is still here. Reload the latest version before saving again.</p>
+              <h3 id="specification-conflict-title">Спецификация изменилась на сервере</h3>
+              <p>
+                Несохранённый текст сохранён на странице. Загрузите последнюю версию перед
+                сохранением.
+              </p>
               <button
                 className="button button--secondary"
                 onClick={() => void reloadLatest()}
                 type="button"
               >
-                Reload latest version
+                Загрузить последнюю версию
               </button>
             </section>
           )}
 
           <form onSubmit={submit}>
             <label className="specification-editor-label" htmlFor="specification-content">
-              Markdown content
+              Текст Markdown
             </label>
             <textarea
               id="specification-content"
@@ -315,12 +347,12 @@ export function ProjectSpecificationPage() {
               value={draft}
             />
             <div className="specification-editor-meta">
-              <span>Editing version {version}</span>
+              <span>Редактируется версия {version}</span>
               <span>{draft.length.toLocaleString()} / 100,000 characters</span>
             </div>
             {saveSpecification.error && saveConflict !== 'stale' && (
               <p className="specification-error" role="alert">
-                {saveSpecification.error.message || 'The specification could not be saved.'}
+                {saveSpecification.error.message || 'Не удалось сохранить спецификацию.'}
               </p>
             )}
             {saveMessage && (
@@ -333,45 +365,49 @@ export function ProjectSpecificationPage() {
               disabled={!isDirty || saveSpecification.isPending || saveConflict === 'stale'}
               type="submit"
             >
-              {saveSpecification.isPending ? 'Saving…' : 'Save specification'}
+              {saveSpecification.isPending ? 'Saving…' : 'Сохранить спецификацию'}
             </button>
           </form>
           {previousGenerationFailed && !isGenerating && (
             <p className="specification-hint">
-              You can retry generation after reviewing the current draft.
+              После проверки текущего черновика можно повторить создание.
             </p>
           )}
           {previousGenerationSuperseded && !isGenerating && (
-            <p className="specification-hint">Generate again to use the current project sources.</p>
+            <p className="specification-hint">
+              Создайте спецификацию повторно, чтобы использовать актуальные источники проекта.
+            </p>
           )}
         </section>
       ) : (
         <section className="specification-read-panel" aria-labelledby="specification-read-title">
           <div className="specification-panel-heading">
             <div>
-              <p className="specification-eyebrow">Shared draft</p>
-              <h2 id="specification-read-title">Current specification</h2>
+              <p className="specification-eyebrow">Общий черновик</p>
+              <h2 id="specification-read-title">Текущая спецификация</h2>
             </div>
             {isExecutor && (
-              <span className="specification-readonly-note">Read-only for closed projects</span>
+              <span className="specification-readonly-note">
+                Для закрытых проектов доступен только просмотр
+              </span>
             )}
           </div>
           {(saveConflict === 'project_closed' || saveConflict === 'generation_project_closed') && (
             <p className="specification-error" role="alert">
               {saveConflict === 'generation_project_closed'
-                ? 'This project closed while generation was starting. The specification is now read-only.'
-                : 'This project closed before your edit could be saved. The specification is now read-only; your unsaved text is preserved below.'}
+                ? 'Проект закрыт во время запуска создания. Спецификация доступна только для чтения.'
+                : 'Проект закрыт до сохранения изменений. Спецификация доступна только для чтения; несохранённый текст приведён ниже.'}
             </p>
           )}
           {specification.content ? (
             <pre className="specification-content">{specification.content}</pre>
           ) : (
-            <p className="specification-empty">No specification draft has been created yet.</p>
+            <p className="specification-empty">Черновик спецификации ещё не создан.</p>
           )}
           {(saveConflict === 'project_closed' || saveConflict === 'generation_project_closed') &&
             isDirty && (
               <div className="specification-unsaved-copy">
-                <h3>Your unsaved edits</h3>
+                <h3>Ваши несохранённые изменения</h3>
                 <pre className="specification-content">{draft}</pre>
               </div>
             )}
@@ -379,7 +415,7 @@ export function ProjectSpecificationPage() {
       )}
 
       <p className="specification-footer-note">
-        This is a working draft. It has no customer approval or signature workflow.
+        Это рабочий черновик без согласования или подписания заказчиком.
       </p>
     </main>
   );

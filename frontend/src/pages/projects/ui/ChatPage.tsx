@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
-import { useProject, useProjectMembers, type ProjectMember } from '../../../entities/project';
+import {
+  projectStatusLabels,
+  useProject,
+  useProjectMembers,
+  type ProjectMember,
+} from '../../../entities/project';
 import {
   useProjectMessages,
   type ChatMessage,
@@ -21,10 +26,10 @@ function createClientMessageId(): string {
 }
 
 function senderLabel(message: ChatMessage, members: ProjectMember[], currentUserId: string) {
-  if (message.sender_id === currentUserId) return 'You';
+  if (message.sender_id === currentUserId) return 'Вы';
   const sender = members.find((member) => member.user_id === message.sender_id);
   const name = [sender?.first_name, sender?.last_name].filter(Boolean).join(' ');
-  return name || 'Project participant';
+  return name || 'Участник проекта';
 }
 
 function messageTime(value: string): string {
@@ -204,7 +209,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
                 delivery_error:
                   error instanceof Error
                     ? error.message
-                    : 'The message could not be sent. Try again.',
+                    : 'Не удалось отправить сообщение. Попробуйте снова.',
               }
             : message,
         ),
@@ -224,17 +229,17 @@ function ProjectChat({ projectId }: { projectId: string }) {
     return (
       <main className="workspace-page workspace-page--narrow">
         <Link className="back-link" to={`/app/projects/${projectId}`}>
-          ← Back to project
+          ← К проекту
         </Link>
         <section className="state-message state-message--error" aria-labelledby="chat-error-title">
-          <h1 id="chat-error-title">We couldn’t open this chat</h1>
+          <h1 id="chat-error-title">Не удалось открыть чат</h1>
           <p>
             {error instanceof ApiError && error.status === 404
-              ? 'This project chat is unavailable to your account.'
-              : error?.message || 'Check your connection and try again.'}
+              ? 'Чат проекта недоступен вашему аккаунту.'
+              : error?.message || 'Проверьте подключение и попробуйте снова.'}
           </p>
           <button className="button button--secondary" onClick={retryPage} type="button">
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>
@@ -245,7 +250,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
     return (
       <main className="workspace-page">
         <p className="state-message" role="status">
-          Loading project chat…
+          Загрузка чата проекта…
         </p>
       </main>
     );
@@ -255,10 +260,10 @@ function ProjectChat({ projectId }: { projectId: string }) {
     return (
       <main className="workspace-page workspace-page--narrow">
         <section className="state-message state-message--error" role="alert">
-          <h1>Project chat access unavailable</h1>
-          <p>Your active project membership could not be confirmed.</p>
+          <h1>Нет доступа к чату проекта</h1>
+          <p>Не удалось подтвердить ваше участие в проекте.</p>
           <Link className="button button--secondary" to="/app/projects">
-            Back to projects
+            К проектам
           </Link>
         </section>
       </main>
@@ -289,27 +294,27 @@ function ProjectChat({ projectId }: { projectId: string }) {
   return (
     <main className="workspace-page workspace-page--chat">
       <Link className="back-link" to={`/app/projects/${project.id}`}>
-        ← Back to {project.name}
+        ← Назад к {project.name}
       </Link>
       <div className="page-heading chat-heading">
         <div>
-          <p className="project-overview-heading__type">Project chat</p>
+          <p className="project-overview-heading__type">Чат проекта</p>
           <h1>{project.name}</h1>
           <p className="page-heading__description">
-            Messages are shared with all active project participants.
+            Сообщения доступны всем активным участникам проекта.
           </p>
         </div>
         <span className={`status-badge status-badge--large status-badge--${project.status}`}>
-          {project.status.replaceAll('_', ' ')}
+          {projectStatusLabels[project.status]}
         </span>
       </div>
 
       <section className="project-panel chat-panel" aria-labelledby="chat-title">
         <div className="section-heading">
           <div>
-            <h2 id="chat-title">Conversation</h2>
+            <h2 id="chat-title">Обсуждение</h2>
             <p className="section-heading__description">
-              You are chatting as the {currentMember.role}.
+              Ваша роль в чате: {currentMember.role === 'executor' ? 'исполнитель' : 'заказчик'}.
             </p>
           </div>
         </div>
@@ -322,18 +327,20 @@ function ProjectChat({ projectId }: { projectId: string }) {
               onClick={() => void historyQuery.fetchNextPage()}
               type="button"
             >
-              {historyQuery.isFetchingNextPage ? 'Loading older messages…' : 'Load older messages'}
+              {historyQuery.isFetchingNextPage
+                ? 'Загрузка предыдущих сообщений…'
+                : 'Загрузить предыдущие сообщения'}
             </button>
           </div>
         )}
 
         {messages.length === 0 ? (
           <div className="empty-state chat-empty-state">
-            <h2>No messages yet</h2>
-            <p>Start the conversation with the other project participant.</p>
+            <h2>Сообщений пока нет</h2>
+            <p>Начните обсуждение с другим участником проекта.</p>
           </div>
         ) : (
-          <ol className="chat-messages" aria-label="Project messages">
+          <ol className="chat-messages" aria-label="Сообщения проекта">
             {messages.map((message) => (
               <li
                 className={`chat-message${message.sender_id === user.id ? ' chat-message--own' : ''}`}
@@ -348,12 +355,12 @@ function ProjectChat({ projectId }: { projectId: string }) {
                   <div
                     className={`chat-message__delivery chat-message__delivery--${message.delivery_state}`}
                   >
-                    {message.delivery_state === 'sending' && <span role="status">Sending…</span>}
-                    {message.delivery_state === 'sent' && <span>Sent</span>}
+                    {message.delivery_state === 'sending' && <span role="status">Отправка…</span>}
+                    {message.delivery_state === 'sent' && <span>Отправлено</span>}
                     {message.delivery_state === 'failed' && (
                       <div>
                         <span role="alert">
-                          {message.delivery_error || 'Message failed to send.'}
+                          {message.delivery_error || 'Не удалось отправить сообщение.'}
                         </span>
                         <button
                           className="button button--quiet"
@@ -363,7 +370,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
                           }
                           type="button"
                         >
-                          Retry message
+                          Повторить отправку
                         </button>
                       </div>
                     )}
@@ -376,14 +383,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
 
         {historyQuery.isFetching && !historyQuery.isFetchingNextPage && (
           <p className="chat-refreshing" role="status">
-            Refreshing history…
+            Обновление истории…
           </p>
         )}
 
         {canSend ? (
           <form className="chat-composer" onSubmit={submit}>
             <label className="form-field" htmlFor="chat-message-input">
-              Message
+              Сообщение
               <textarea
                 id="chat-message-input"
                 maxLength={10_000}
@@ -391,7 +398,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
                   draftRevision.current += 1;
                   setDraft(event.currentTarget.value);
                 }}
-                placeholder="Write a message"
+                placeholder="Напишите сообщение"
                 rows={3}
                 value={draft}
               />
@@ -402,12 +409,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
               disabled={sendMessage.isPending || !draft.trim()}
               type="submit"
             >
-              {sendMessage.isPending ? 'Sending…' : 'Send message'}
+              {sendMessage.isPending ? 'Отправка…' : 'Отправить сообщение'}
             </button>
           </form>
         ) : (
           <p className="chat-readonly" role="status">
-            This project is {project.status}; the chat history is read only.
+            Статус проекта: {projectStatusLabels[project.status]}. История чата доступна только для
+            чтения.
           </p>
         )}
       </section>

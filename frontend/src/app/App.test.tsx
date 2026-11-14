@@ -19,17 +19,17 @@ test('an unmatched route renders a not-found state', async () => {
   window.history.replaceState({}, '', '/unmatched-route');
   render(<App />);
 
-  expect(screen.getByRole('heading', { name: 'Page not found' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Страница не найдена' })).toBeTruthy();
 });
 
 test('the login route renders an accessible credentials form', async () => {
   window.history.replaceState({}, '', '/login');
   render(<App />);
 
-  expect(screen.getByRole('heading', { name: 'Log in' })).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toBeTruthy();
-  expect(screen.getByLabelText('Password')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Войти' })).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toBeTruthy();
+  expect(screen.getByLabelText('Пароль')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Войти' })).toBeTruthy();
 });
 
 test('successful login loads the authenticated account without storing credentials', async () => {
@@ -83,15 +83,15 @@ test('successful login loads the authenticated account without storing credentia
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'verified@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'correct-horse-battery' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
-  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Проекты' })).toBeTruthy();
   expect(screen.getByText('verified@example.com')).toBeTruthy();
   expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/v1/auth/login/')).toBe(
     true,
@@ -130,19 +130,24 @@ test('unverified login stays in the verification flow', async () => {
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'new-user@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'unverified-account-password' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
-  expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'new-user@example.com');
+  expect(
+    await screen.findByRole('heading', { name: 'Подтвердите электронную почту' }),
+  ).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty(
+    'value',
+    'new-user@example.com',
+  );
   expect(
     screen.getByText(
-      'After you verify your email, log in again to continue. If you need a verification email, request one below.',
+      'После подтверждения адреса войдите снова. При необходимости запросите новое письмо ниже.',
     ),
   ).toBeTruthy();
   expect(screen.queryByText(/We sent a verification link to/)).toBeNull();
@@ -190,21 +195,25 @@ test('resending verification keeps the email and can be retried after a server e
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'new-user@example.com' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Resend verification email' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить письмо повторно' }));
 
-  expect(
-    await screen.findByText('The verification service is temporarily unavailable.'),
-  ).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'new-user@example.com');
-  fireEvent.click(screen.getByRole('button', { name: 'Resend verification email' }));
+  expect(await screen.findByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty(
+    'value',
+    'new-user@example.com',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить письмо повторно' }));
 
   expect((await screen.findByRole('status')).textContent).toContain(
-    'If that address needs verification, a new message is on its way.',
+    'Если адрес требует подтверждения, новое письмо уже отправлено.',
   );
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'new-user@example.com');
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty(
+    'value',
+    'new-user@example.com',
+  );
   expect(resendAttempts).toBe(2);
 });
 
@@ -243,16 +252,20 @@ test('successful registration opens verification-required without creating a ses
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'new-user@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'strong-password-42' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
 
-  expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeTruthy();
-  expect(screen.getByText('We sent a verification link to new-user@example.com.')).toBeTruthy();
+  expect(
+    await screen.findByRole('heading', { name: 'Подтвердите электронную почту' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText('Мы отправили ссылку подтверждения на адрес new-user@example.com.'),
+  ).toBeTruthy();
   expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/v1/auth/me/')).toBe(false);
 });
 
@@ -313,16 +326,16 @@ test('logout returns to login and a later protected visit fetches the session ag
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
-  expect(await screen.findByRole('heading', { name: 'Log in' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Проекты' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Выйти' }));
+  expect(await screen.findByRole('heading', { name: 'Войти' })).toBeTruthy();
   expect(window.location.pathname).toBe('/login');
 
   window.history.pushState({}, '', '/app');
   window.dispatchEvent(new PopStateEvent('popstate'));
 
   await waitFor(() => expect(currentUserRequests).toBe(2));
-  expect(await screen.findByRole('heading', { name: 'Log in' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Войти' })).toBeTruthy();
   expect(window.location.pathname).toBe('/login');
 });
 
@@ -368,8 +381,13 @@ test('an unverified user is sent to the verification-required page with their em
   render(<App />);
 
   await waitFor(() => expect(window.location.pathname).toBe('/verification-required'));
-  expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'new-user@example.com');
+  expect(
+    await screen.findByRole('heading', { name: 'Подтвердите электронную почту' }),
+  ).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty(
+    'value',
+    'new-user@example.com',
+  );
 });
 
 test('the registration route renders an accessible account form', async () => {
@@ -380,10 +398,10 @@ test('the registration route renders an accessible account form', async () => {
 
   render(<appModule.App />);
 
-  expect(screen.getByRole('heading', { name: 'Create an account' })).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toBeTruthy();
-  expect(screen.getByLabelText('Password')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Создать аккаунт' })).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toBeTruthy();
+  expect(screen.getByLabelText('Пароль')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Создать аккаунт' })).toBeTruthy();
 });
 
 test('verification consumes the URL fragment once and removes it before posting', async () => {
@@ -410,7 +428,9 @@ test('verification consumes the URL fragment once and removes it before posting'
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  expect(await screen.findByRole('heading', { name: 'Email confirmed' })).toBeTruthy();
+  expect(
+    await screen.findByRole('heading', { name: 'Адрес электронной почты подтверждён' }),
+  ).toBeTruthy();
   expect(window.location.hash).toBe('');
   expect(fetchMock).toHaveBeenCalledTimes(2);
   const confirmOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
@@ -448,10 +468,8 @@ test('an expired verification token shows recovery without restoring it to the U
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  expect(
-    await screen.findByRole('heading', { name: 'We couldn’t confirm this email' }),
-  ).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Request another verification email' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Не удалось подтвердить адрес' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Запросить новое письмо' })).toBeTruthy();
   expect(window.location.hash).toBe('');
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
@@ -488,17 +506,20 @@ test('registration validation retains email, clears password, and writes no auth
   const localStorageWrite = vi.spyOn(window.localStorage, 'setItem');
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'existing@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'weak-password' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
 
-  expect(await screen.findByText('This email is already registered.')).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'existing@example.com');
-  expect(screen.getByLabelText('Password')).toHaveProperty('value', '');
+  expect((await screen.findAllByText('Проверьте значение этого поля.')).length).toBeGreaterThan(0);
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty(
+    'value',
+    'existing@example.com',
+  );
+  expect(screen.getByLabelText('Пароль')).toHaveProperty('value', '');
   expect(localStorageWrite).not.toHaveBeenCalled();
 });
 
@@ -533,18 +554,18 @@ test('login validation retains email, clears password, and reports field errors'
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText('Email'), {
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'not-an-email' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'weak-password' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
-  expect(await screen.findByText('Enter a valid email address.')).toBeTruthy();
-  expect(screen.getByText('Choose a stronger password.')).toBeTruthy();
-  expect(screen.getByLabelText('Email')).toHaveProperty('value', 'not-an-email');
-  expect(screen.getByLabelText('Password')).toHaveProperty('value', '');
+  expect(await screen.findByText('Введите корректный адрес электронной почты.')).toBeTruthy();
+  expect(screen.getByText('Проверьте значение этого поля.')).toBeTruthy();
+  expect(screen.getByLabelText('Электронная почта')).toHaveProperty('value', 'not-an-email');
+  expect(screen.getByLabelText('Пароль')).toHaveProperty('value', '');
 });
 
 test('temporary API failures remain retryable instead of redirecting to login', async () => {
@@ -587,12 +608,14 @@ test('temporary API failures remain retryable instead of redirecting to login', 
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
 
-  expect(await screen.findByRole('button', { name: 'Try again' }, { timeout: 4000 })).toBeTruthy();
+  expect(
+    await screen.findByRole('button', { name: 'Попробовать снова' }, { timeout: 4000 }),
+  ).toBeTruthy();
   expect(accountAttempts).toBe(3);
   expect(window.location.pathname).toBe('/app');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }));
 
-  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Проекты' })).toBeTruthy();
   expect(accountAttempts).toBe(4);
 });

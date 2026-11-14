@@ -53,7 +53,36 @@ const transitionOptions = {
 } satisfies Record<string, Record<string, string[]>>;
 
 function statusText(status: string): string {
-  return status.replaceAll('_', ' ');
+  const labels: Record<string, string> = {
+    planned: 'Запланирован',
+    active: 'Активен',
+    blocked: 'Заблокирован',
+    completed: 'Завершён',
+    cancelled: 'Отменён',
+    draft: 'Черновик',
+    confirmed: 'Подтверждено',
+    rejected: 'Отклонено',
+    in_progress: 'В работе',
+    todo: 'К выполнению',
+    done: 'Выполнено',
+    open: 'Открыт',
+    resolved: 'Разрешён',
+    dismissed: 'Отклонён',
+    unresolved: 'Не разрешён',
+    archived: 'В архиве',
+    pending: 'Ожидает',
+    queued: 'В очереди',
+    running: 'Выполняется',
+    failed: 'Ошибка',
+    succeeded: 'Завершён',
+    accepted: 'Принято',
+    applied: 'Применено',
+    discarded: 'Отклонён',
+    generated: 'Создано',
+    published: 'Опубликовано',
+    needs_review: 'Требует проверки',
+  };
+  return labels[status] ?? status.replaceAll('_', ' ');
 }
 
 function nextStatuses(graph: Record<string, string[]>, current: string): string[] {
@@ -65,7 +94,7 @@ function evidenceQuestionLabel(metadata: unknown): string {
     const questionKey = (metadata as { question_key?: unknown }).question_key;
     if (typeof questionKey === 'string') return questionKey.replaceAll('_', ' ');
   }
-  return 'Questionnaire answer';
+  return 'Ответ анкеты';
 }
 
 function TransitionField({
@@ -82,11 +111,11 @@ function TransitionField({
   onChange: (value: string) => void;
 }) {
   if (options.length === 0) {
-    return <p className="project-state__terminal">Status: {statusText(current)}</p>;
+    return <p className="project-state__terminal">Статус: {statusText(current)}</p>;
   }
   return (
     <label className="form-field" htmlFor={label}>
-      Status
+      Статус
       <select id={label} value={value} onChange={(event) => onChange(event.currentTarget.value)}>
         <option value={current}>{statusText(current)}</option>
         {options.map((option) => (
@@ -141,19 +170,19 @@ function StageCard({
       </div>
       {stage.description && <p>{stage.description}</p>}
       <p className="project-state__dates">
-        {stage.start_date ? `Starts ${stage.start_date}` : 'Start date not set'}
+        {stage.start_date ? `Начало: ${stage.start_date}` : 'Дата начала не указана'}
         {' · '}
-        {stage.due_date ? `Due ${stage.due_date}` : 'Due date not set'}
+        {stage.due_date ? `Срок: ${stage.due_date}` : 'Срок не указан'}
       </p>
       {canEdit && !editing && (
         <button className="button button--quiet" type="button" onClick={() => setEditing(true)}>
-          Edit stage
+          Изменить этап
         </button>
       )}
       {canEdit && editing && (
         <form className="project-state__editor" onSubmit={submit}>
           <label className="form-field">
-            Stage name
+            Название этапа
             <input
               required
               maxLength={200}
@@ -162,7 +191,7 @@ function StageCard({
             />
           </label>
           <label className="form-field">
-            Description
+            Описание
             <textarea
               rows={2}
               value={description}
@@ -170,7 +199,7 @@ function StageCard({
             />
           </label>
           <label className="form-field">
-            Position
+            Позиция
             <input
               min={0}
               type="number"
@@ -179,7 +208,7 @@ function StageCard({
             />
           </label>
           <label className="form-field">
-            Start date
+            Дата начала
             <input
               type="date"
               value={startDate}
@@ -187,7 +216,7 @@ function StageCard({
             />
           </label>
           <label className="form-field">
-            Due date
+            Срок
             <input
               type="date"
               value={dueDate}
@@ -203,14 +232,14 @@ function StageCard({
           />
           <div className="form-actions">
             <button className="button button--primary" type="submit">
-              Save stage
+              Сохранить этап
             </button>
             <button
               className="button button--secondary"
               onClick={() => setEditing(false)}
               type="button"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </form>
@@ -258,18 +287,18 @@ function RequirementCard({
       {requirement.description && <p>{requirement.description}</p>}
       {requirement.confirmed_at && (
         <p className="project-state__dates">
-          Confirmed {new Date(requirement.confirmed_at).toLocaleDateString()}
+          Подтверждено {new Date(requirement.confirmed_at).toLocaleDateString()}
         </p>
       )}
       {canEdit && !editing && (
         <button className="button button--quiet" type="button" onClick={() => setEditing(true)}>
-          Edit requirement
+          Изменить требование
         </button>
       )}
       {canEdit && editing && (
         <form className="project-state__editor" onSubmit={submit}>
           <label className="form-field">
-            Requirement
+            Требование
             <input
               required
               maxLength={255}
@@ -278,7 +307,7 @@ function RequirementCard({
             />
           </label>
           <label className="form-field">
-            Description
+            Описание
             <textarea
               rows={2}
               value={description}
@@ -294,14 +323,14 @@ function RequirementCard({
           />
           <div className="form-actions">
             <button className="button button--primary" type="submit">
-              Save requirement
+              Сохранить требование
             </button>
             <button
               className="button button--secondary"
               onClick={() => setEditing(false)}
               type="button"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </form>
@@ -340,7 +369,7 @@ function TaskCard({
   const assignedMember = members.find((member) => member.user_id === task.assignee_id);
   const assignedName = assignedMember
     ? [assignedMember.first_name, assignedMember.last_name].filter(Boolean).join(' ') ||
-      assignedMember.role
+      (assignedMember.role === 'executor' ? 'Исполнитель' : 'Заказчик')
     : null;
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -367,23 +396,23 @@ function TaskCard({
       </div>
       {task.description && <p>{task.description}</p>}
       <p className="project-state__dates">
-        {task.due_date ? `Due ${task.due_date}` : 'Due date not set'}
-        {assignedName ? ` · Assigned to ${assignedName}` : ''}
+        {task.due_date ? `Срок: ${task.due_date}` : 'Срок не указан'}
+        {assignedName ? ` · Исполнитель: ${assignedName}` : ''}
       </p>
       {task.stage_id && (
         <p className="project-state__dates">
-          Stage: {stages.find((stage) => stage.id === task.stage_id)?.name ?? 'Unavailable'}
+          Этап: {stages.find((stage) => stage.id === task.stage_id)?.name ?? 'Недоступно'}
         </p>
       )}
       {canEdit && !editing && (
         <button className="button button--quiet" type="button" onClick={() => setEditing(true)}>
-          Edit task
+          Изменить задачу
         </button>
       )}
       {canEdit && editing && (
         <form className="project-state__editor" onSubmit={submit}>
           <label className="form-field">
-            Task
+            Задача
             <input
               required
               maxLength={255}
@@ -392,7 +421,7 @@ function TaskCard({
             />
           </label>
           <label className="form-field">
-            Description
+            Описание
             <textarea
               rows={2}
               value={description}
@@ -400,9 +429,9 @@ function TaskCard({
             />
           </label>
           <label className="form-field">
-            Stage
+            Этап
             <select value={stageId} onChange={(event) => setStageId(event.currentTarget.value)}>
-              <option value="">No stage</option>
+              <option value="">Без этапа</option>
               {stages.map((stage) => (
                 <option key={stage.id} value={stage.id}>
                   {stage.name}
@@ -411,21 +440,22 @@ function TaskCard({
             </select>
           </label>
           <label className="form-field">
-            Assignee
+            Исполнитель
             <select
               value={assigneeId}
               onChange={(event) => setAssigneeId(event.currentTarget.value)}
             >
-              <option value="">Unassigned</option>
+              <option value="">Не назначено</option>
               {members.map((member) => (
                 <option key={member.user_id} value={member.user_id}>
-                  {[member.first_name, member.last_name].filter(Boolean).join(' ') || member.role}
+                  {[member.first_name, member.last_name].filter(Boolean).join(' ') ||
+                    (member.role === 'executor' ? 'Исполнитель' : 'Заказчик')}
                 </option>
               ))}
             </select>
           </label>
           <label className="form-field">
-            Due date
+            Срок
             <input
               type="date"
               value={dueDate}
@@ -441,14 +471,14 @@ function TaskCard({
           />
           <div className="form-actions">
             <button className="button button--primary" type="submit">
-              Save task
+              Сохранить задачу
             </button>
             <button
               className="button button--secondary"
               onClick={() => setEditing(false)}
               type="button"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </form>
@@ -496,18 +526,18 @@ function OpenQuestionCard({
       {item.answer && <p>{item.answer}</p>}
       {item.resolved_at && (
         <p className="project-state__dates">
-          Closed {new Date(item.resolved_at).toLocaleDateString()}
+          Закрыто {new Date(item.resolved_at).toLocaleDateString()}
         </p>
       )}
       {canEdit && !editing && (
         <button className="button button--quiet" type="button" onClick={() => setEditing(true)}>
-          Edit question
+          Изменить вопрос
         </button>
       )}
       {canEdit && editing && (
         <form className="project-state__editor" onSubmit={submit}>
           <label className="form-field">
-            Question
+            Вопрос
             <textarea
               required
               rows={2}
@@ -516,7 +546,7 @@ function OpenQuestionCard({
             />
           </label>
           <label className="form-field">
-            Answer
+            Ответ
             <textarea
               rows={2}
               value={answer}
@@ -532,14 +562,14 @@ function OpenQuestionCard({
           />
           <div className="form-actions">
             <button className="button button--primary" type="submit">
-              Save question
+              Сохранить вопрос
             </button>
             <button
               className="button button--secondary"
               onClick={() => setEditing(false)}
               type="button"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </form>
@@ -585,7 +615,7 @@ function ProjectConflictCard({
       {conflict.description && <p>{conflict.description}</p>}
       {conflict.resolution && (
         <p>
-          <strong>Resolution:</strong> {conflict.resolution}
+          <strong>Решение:</strong> {conflict.resolution}
         </p>
       )}
       <ul className="project-state__evidence">
@@ -597,12 +627,12 @@ function ProjectConflictCard({
       </ul>
       {conflict.resolved_at && (
         <p className="project-state__dates">
-          Decided {new Date(conflict.resolved_at).toLocaleDateString()}
+          Принято решение {new Date(conflict.resolved_at).toLocaleDateString()}
         </p>
       )}
       {canEdit && conflict.status === 'unresolved' && !editing && (
         <button className="button button--quiet" type="button" onClick={() => setEditing(true)}>
-          {options.length > 0 ? 'Resolve conflict' : 'Edit conflict'}
+          {options.length > 0 ? 'Разрешить противоречие' : 'Изменить противоречие'}
         </button>
       )}
       {canEdit && conflict.status === 'unresolved' && editing && (
@@ -615,7 +645,7 @@ function ProjectConflictCard({
             value={nextStatus}
           />
           <label className="form-field">
-            Resolution
+            Решение
             <textarea
               required={nextStatus === 'resolved'}
               rows={3}
@@ -625,14 +655,14 @@ function ProjectConflictCard({
           </label>
           <div className="form-actions">
             <button className="button button--primary" type="submit">
-              Save conflict
+              Сохранить противоречие
             </button>
             <button
               className="button button--secondary"
               onClick={() => setEditing(false)}
               type="button"
             >
-              Cancel
+              Отмена
             </button>
           </div>
         </form>
@@ -645,8 +675,8 @@ function EmptyMessage({ canEdit, entity }: { canEdit: boolean; entity: string })
   return (
     <p className="project-state__empty">
       {canEdit
-        ? `Add the first ${entity} to the shared project plan.`
-        : `The executor has not added any ${entity} yet.`}
+        ? `Добавьте ${entity} в общий план проекта.`
+        : `Исполнитель ещё не добавил ${entity}.`}
     </p>
   );
 }
@@ -696,7 +726,7 @@ function StageCreateForm({
       }}
     >
       <label className="form-field">
-        Stage name
+        Название этапа
         <input
           required
           maxLength={200}
@@ -705,7 +735,7 @@ function StageCreateForm({
         />
       </label>
       <label className="form-field">
-        Description
+        Описание
         <textarea
           rows={2}
           value={description}
@@ -713,7 +743,7 @@ function StageCreateForm({
         />
       </label>
       <label className="form-field">
-        Start date
+        Дата начала
         <input
           type="date"
           value={startDate}
@@ -721,7 +751,7 @@ function StageCreateForm({
         />
       </label>
       <label className="form-field">
-        Due date
+        Срок
         <input
           type="date"
           value={dueDate}
@@ -729,7 +759,7 @@ function StageCreateForm({
         />
       </label>
       <button className="button button--primary" disabled={busy} type="submit">
-        {busy ? 'Saving…' : 'Create stage'}
+        {busy ? 'Saving…' : 'Создать этап'}
       </button>
     </form>
   );
@@ -756,7 +786,7 @@ function RequirementCreateForm({
       }}
     >
       <label className="form-field">
-        Requirement
+        Требование
         <input
           required
           maxLength={255}
@@ -765,7 +795,7 @@ function RequirementCreateForm({
         />
       </label>
       <label className="form-field">
-        Description
+        Описание
         <textarea
           rows={2}
           value={description}
@@ -773,7 +803,7 @@ function RequirementCreateForm({
         />
       </label>
       <button className="button button--primary" disabled={busy} type="submit">
-        {busy ? 'Saving…' : 'Create requirement'}
+        {busy ? 'Saving…' : 'Создать требование'}
       </button>
     </form>
   );
@@ -819,7 +849,7 @@ function TaskCreateForm({
       }}
     >
       <label className="form-field">
-        Task
+        Задача
         <input
           required
           maxLength={255}
@@ -828,7 +858,7 @@ function TaskCreateForm({
         />
       </label>
       <label className="form-field">
-        Description
+        Описание
         <textarea
           rows={2}
           value={description}
@@ -836,9 +866,9 @@ function TaskCreateForm({
         />
       </label>
       <label className="form-field">
-        Stage
+        Этап
         <select value={stageId} onChange={(event) => setStageId(event.currentTarget.value)}>
-          <option value="">No stage</option>
+          <option value="">Без этапа</option>
           {stages.map((stage) => (
             <option key={stage.id} value={stage.id}>
               {stage.name}
@@ -847,18 +877,19 @@ function TaskCreateForm({
         </select>
       </label>
       <label className="form-field">
-        Assignee
+        Исполнитель
         <select value={assigneeId} onChange={(event) => setAssigneeId(event.currentTarget.value)}>
-          <option value="">Unassigned</option>
+          <option value="">Не назначено</option>
           {members.map((member) => (
             <option key={member.user_id} value={member.user_id}>
-              {[member.first_name, member.last_name].filter(Boolean).join(' ') || member.role}
+              {[member.first_name, member.last_name].filter(Boolean).join(' ') ||
+                (member.role === 'executor' ? 'Исполнитель' : 'Заказчик')}
             </option>
           ))}
         </select>
       </label>
       <label className="form-field">
-        Due date
+        Срок
         <input
           type="date"
           value={dueDate}
@@ -866,7 +897,7 @@ function TaskCreateForm({
         />
       </label>
       <button className="button button--primary" disabled={busy} type="submit">
-        {busy ? 'Saving…' : 'Create task'}
+        {busy ? 'Saving…' : 'Создать задачу'}
       </button>
     </form>
   );
@@ -889,7 +920,7 @@ function OpenQuestionCreateForm({
       }}
     >
       <label className="form-field">
-        Question
+        Вопрос
         <textarea
           required
           rows={2}
@@ -898,7 +929,7 @@ function OpenQuestionCreateForm({
         />
       </label>
       <button className="button button--primary" disabled={busy} type="submit">
-        {busy ? 'Saving…' : 'Create question'}
+        {busy ? 'Saving…' : 'Создать вопрос'}
       </button>
     </form>
   );
@@ -946,7 +977,7 @@ function ConflictCreateForm({
       }}
     >
       <label className="form-field">
-        Conflict title
+        Название противоречия
         <input
           required
           maxLength={255}
@@ -955,7 +986,7 @@ function ConflictCreateForm({
         />
       </label>
       <label className="form-field">
-        Description
+        Описание
         <textarea
           rows={2}
           value={description}
@@ -963,9 +994,9 @@ function ConflictCreateForm({
         />
       </label>
       <fieldset className="project-state__evidence-picker">
-        <legend>Choose at least two submitted questionnaire answers</legend>
+        <legend>Выберите не менее двух отправленных ответов анкеты</legend>
         {options.length === 0 ? (
-          <p>No submitted answers are available as evidence yet.</p>
+          <p>Отправленных ответов для подтверждения пока нет.</p>
         ) : (
           options.map((option) => (
             <label key={option.source_id}>
@@ -987,10 +1018,12 @@ function ConflictCreateForm({
         disabled={busy || selected.length < 2}
         type="submit"
       >
-        {busy ? 'Saving…' : 'Create conflict'}
+        {busy ? 'Saving…' : 'Создать противоречие'}
       </button>
       {selected.length < 2 && (
-        <p className="project-state__hint">Select two answers to create a conflict record.</p>
+        <p className="project-state__hint">
+          Выберите два ответа, чтобы зафиксировать противоречие.
+        </p>
       )}
     </form>
   );
@@ -1049,14 +1082,14 @@ export function ProjectStatePage() {
           className="state-message state-message--error"
           aria-labelledby="project-state-error-title"
         >
-          <h1 id="project-state-error-title">We couldn’t load Project State</h1>
+          <h1 id="project-state-error-title">Не удалось загрузить состояние проекта</h1>
           <p>
             {error instanceof ApiError && error.status === 404
-              ? 'This project is unavailable to your account.'
-              : error?.message || 'Check your connection and try again.'}
+              ? 'Проект недоступен вашему аккаунту.'
+              : error?.message || 'Проверьте подключение и попробуйте снова.'}
           </p>
           <button className="button button--secondary" onClick={() => void retry()} type="button">
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>
@@ -1079,7 +1112,7 @@ export function ProjectStatePage() {
     return (
       <main className="workspace-page">
         <p className="state-message" role="status">
-          Loading Project State…
+          Загрузка состояния проекта…
         </p>
       </main>
     );
@@ -1089,7 +1122,7 @@ export function ProjectStatePage() {
     return (
       <main className="workspace-page workspace-page--narrow">
         <p className="state-message state-message--error" role="alert">
-          Your active project membership could not be confirmed.
+          Не удалось подтвердить ваше участие в проекте.
         </p>
       </main>
     );
@@ -1119,13 +1152,13 @@ export function ProjectStatePage() {
   return (
     <main className="workspace-page project-state-page">
       <Link className="back-link" to={`/app/projects/${project.id}`}>
-        Back to project
+        К проекту
       </Link>
       <header className="project-state__header">
         <div>
-          <p className="eyebrow">Shared project plan</p>
-          <h1>Project State</h1>
-          <p>Stages, requirements, tasks, open questions and recorded conflicts.</p>
+          <p className="eyebrow">Общий план проекта</p>
+          <h1>Состояние проекта</h1>
+          <p>Этапы, требования, задачи, открытые вопросы и зафиксированные противоречия.</p>
         </div>
         <span
           className={`project-state__project-status project-state__project-status--${project.status}`}
@@ -1135,16 +1168,19 @@ export function ProjectStatePage() {
       </header>
       {!canEdit && project.status !== 'draft' && project.status !== 'active' && (
         <p className="project-state__readonly-note">
-          This project is read-only while it is {statusText(project.status)}.
+          Проект доступен только для чтения. Статус: {statusText(project.status)}.
         </p>
       )}
       {mutationErrors.length > 0 && (
         <p className="state-message state-message--error" role="alert">
           {mutationErrors[0].message ||
-            'Project State could not be saved. Your edits are still here.'}
+            'Не удалось сохранить состояние проекта. Ваши изменения остались на странице.'}
         </p>
       )}
-      <fieldset className="project-state__summary" aria-label="Project State record counts">
+      <fieldset
+        className="project-state__summary"
+        aria-label="Количество записей состояния проекта"
+      >
         {Object.entries(aggregateQuery.data.counts).map(([label, count]) => (
           <div key={label}>
             <strong>{count}</strong>
@@ -1154,10 +1190,10 @@ export function ProjectStatePage() {
       </fieldset>
 
       <section className="project-state__section" aria-labelledby="project-state-stages">
-        <SectionHeader title="Stages" count={aggregateQuery.data.counts.stages} />
+        <SectionHeader title="Этапы" count={aggregateQuery.data.counts.stages} />
         {canEdit && (
           <details className="project-state__create">
-            <summary>Add stage</summary>
+            <summary>Добавить этап</summary>
             <StageCreateForm
               busy={createStage.isPending}
               nextPosition={stages.length}
@@ -1166,7 +1202,7 @@ export function ProjectStatePage() {
           </details>
         )}
         {stages.length === 0 ? (
-          <EmptyMessage canEdit={canEdit} entity="stages" />
+          <EmptyMessage canEdit={canEdit} entity="этапы" />
         ) : (
           <div className="project-state__records">
             {stages.map((stage) => (
@@ -1184,10 +1220,10 @@ export function ProjectStatePage() {
       </section>
 
       <section className="project-state__section" aria-labelledby="project-state-requirements">
-        <SectionHeader title="Requirements" count={aggregateQuery.data.counts.requirements} />
+        <SectionHeader title="Требования" count={aggregateQuery.data.counts.requirements} />
         {canEdit && (
           <details className="project-state__create">
-            <summary>Add requirement</summary>
+            <summary>Добавить требование</summary>
             <RequirementCreateForm
               busy={createRequirement.isPending}
               onCreate={(data, done) => createRequirement.mutate(data, { onSuccess: done })}
@@ -1195,7 +1231,7 @@ export function ProjectStatePage() {
           </details>
         )}
         {requirements.length === 0 ? (
-          <EmptyMessage canEdit={canEdit} entity="requirements" />
+          <EmptyMessage canEdit={canEdit} entity="требования" />
         ) : (
           <div className="project-state__records">
             {requirements.map((item) => (
@@ -1213,10 +1249,10 @@ export function ProjectStatePage() {
       </section>
 
       <section className="project-state__section" aria-labelledby="project-state-tasks">
-        <SectionHeader title="Tasks" count={aggregateQuery.data.counts.tasks} />
+        <SectionHeader title="Задачи" count={aggregateQuery.data.counts.tasks} />
         {canEdit && (
           <details className="project-state__create">
-            <summary>Add task</summary>
+            <summary>Добавить задачу</summary>
             <TaskCreateForm
               busy={createTask.isPending}
               members={activeMembers}
@@ -1226,7 +1262,7 @@ export function ProjectStatePage() {
           </details>
         )}
         {tasks.length === 0 ? (
-          <EmptyMessage canEdit={canEdit} entity="tasks" />
+          <EmptyMessage canEdit={canEdit} entity="задачи" />
         ) : (
           <div className="project-state__records">
             {tasks.map((task) => (
@@ -1246,10 +1282,10 @@ export function ProjectStatePage() {
       </section>
 
       <section className="project-state__section" aria-labelledby="project-state-questions">
-        <SectionHeader title="Open questions" count={aggregateQuery.data.counts.open_questions} />
+        <SectionHeader title="Открытые вопросы" count={aggregateQuery.data.counts.open_questions} />
         {canEdit && (
           <details className="project-state__create">
-            <summary>Add question</summary>
+            <summary>Добавить вопрос</summary>
             <OpenQuestionCreateForm
               busy={createQuestion.isPending}
               onCreate={(data, done) => createQuestion.mutate(data, { onSuccess: done })}
@@ -1257,7 +1293,7 @@ export function ProjectStatePage() {
           </details>
         )}
         {questions.length === 0 ? (
-          <EmptyMessage canEdit={canEdit} entity="open questions" />
+          <EmptyMessage canEdit={canEdit} entity="открытые вопросы" />
         ) : (
           <div className="project-state__records">
             {questions.map((item) => (
@@ -1275,10 +1311,10 @@ export function ProjectStatePage() {
       </section>
 
       <section className="project-state__section" aria-labelledby="project-state-conflicts">
-        <SectionHeader title="Conflicts" count={aggregateQuery.data.counts.conflicts} />
+        <SectionHeader title="Противоречия" count={aggregateQuery.data.counts.conflicts} />
         {canEdit && (
           <details className="project-state__create">
-            <summary>Record a conflict</summary>
+            <summary>Зафиксировать противоречие</summary>
             {evidenceOptionsQuery.isError ? (
               <div className="state-message state-message--error">
                 <p>{evidenceOptionsQuery.error.message}</p>
@@ -1287,11 +1323,11 @@ export function ProjectStatePage() {
                   onClick={() => void evidenceOptionsQuery.refetch()}
                   type="button"
                 >
-                  Retry evidence
+                  Повторить загрузку источников
                 </button>
               </div>
             ) : evidenceOptionsQuery.isPending ? (
-              <p role="status">Loading evidence…</p>
+              <p role="status">Загрузка источников…</p>
             ) : (
               <ConflictCreateForm
                 busy={createConflict.isPending}
@@ -1302,7 +1338,7 @@ export function ProjectStatePage() {
           </details>
         )}
         {conflicts.length === 0 ? (
-          <EmptyMessage canEdit={canEdit} entity="conflicts" />
+          <EmptyMessage canEdit={canEdit} entity="противоречия" />
         ) : (
           <div className="project-state__records">
             {conflicts.map((conflict) => (

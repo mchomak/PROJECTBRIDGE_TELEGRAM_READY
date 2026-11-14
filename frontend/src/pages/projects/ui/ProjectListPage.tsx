@@ -10,7 +10,7 @@ import { ApiError } from '../../../shared/api';
 
 function projectTypeLabel(project: Project): string {
   return (
-    projectTypeOptions.find((option) => option.value === project.project_type)?.label ?? 'Other'
+    projectTypeOptions.find((option) => option.value === project.project_type)?.label ?? 'Другое'
   );
 }
 
@@ -18,15 +18,20 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
 }
 
+function projectCountLabel(count: number): string {
+  const form = new Intl.PluralRules('ru').select(count);
+  return form === 'one' ? 'проект' : form === 'few' ? 'проекта' : 'проектов';
+}
+
 function ProjectRows({ projects }: { projects: Project[] }) {
   return (
-    <ul className="project-list" aria-label="Projects">
+    <ul className="project-list" aria-label="Проекты">
       {projects.map((project) => (
         <li className="project-row" key={project.id}>
           <Link className="project-row__main" to={`/app/projects/${project.id}`}>
             <span className="project-row__name">{project.name}</span>
             <span className="project-row__meta">
-              {projectTypeLabel(project)} · Updated {formatDate(project.updated_at)}
+              {projectTypeLabel(project)} · Обновлён {formatDate(project.updated_at)}
             </span>
           </Link>
           <span className={`status-badge status-badge--${project.status}`}>
@@ -41,7 +46,7 @@ function ProjectRows({ projects }: { projects: Project[] }) {
 export function ProjectListPage({ archived = false }: { archived?: boolean }) {
   const [page, setPage] = useState(1);
   const projects = useProjectList(archived, page);
-  const title = archived ? 'Archived projects' : 'Projects';
+  const title = archived ? 'Архивные проекты' : 'Проекты';
 
   return (
     <main className="workspace-page">
@@ -50,24 +55,24 @@ export function ProjectListPage({ archived = false }: { archived?: boolean }) {
           <h1>{title}</h1>
           <p className="page-heading__description">
             {archived
-              ? 'Archived projects remain available to their active participants.'
-              : 'Plan, manage, and keep your project details in one place.'}
+              ? 'Архивные проекты доступны их активным участникам.'
+              : 'Планируйте проект и храните все его данные в одном месте.'}
           </p>
         </div>
         {archived ? (
           <Link className="button button--secondary" to="/app/projects">
-            Back to projects
+            К проектам
           </Link>
         ) : (
           <Link className="button button--primary" to="/app/projects/new">
-            Create project
+            Создать проект
           </Link>
         )}
       </div>
 
       {projects.isPending && (
         <p className="state-message" role="status">
-          Loading projects…
+          Загрузка проектов…
         </p>
       )}
 
@@ -76,18 +81,18 @@ export function ProjectListPage({ archived = false }: { archived?: boolean }) {
           className="state-message state-message--error"
           aria-labelledby="project-list-error"
         >
-          <h2 id="project-list-error">We couldn’t load these projects</h2>
+          <h2 id="project-list-error">Не удалось загрузить проекты</h2>
           <p>
             {projects.error instanceof ApiError
               ? projects.error.message
-              : 'Check your connection and try again.'}
+              : 'Проверьте подключение и попробуйте снова.'}
           </p>
           <button
             className="button button--secondary"
             onClick={() => void projects.refetch()}
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </section>
       )}
@@ -95,16 +100,16 @@ export function ProjectListPage({ archived = false }: { archived?: boolean }) {
       {projects.data && projects.data.results.length === 0 && (
         <section className="empty-state" aria-labelledby="project-list-empty">
           <h2 id="project-list-empty">
-            {archived ? 'No archived projects' : 'Your workspace is ready'}
+            {archived ? 'Нет архивных проектов' : 'Рабочее пространство готово'}
           </h2>
           <p>
             {archived
-              ? 'Projects will appear here when an executor archives them.'
-              : 'Create a project to capture its goals, scope, timeline, and budget.'}
+              ? 'Здесь появятся проекты, которые исполнитель перенесёт в архив.'
+              : 'Создайте проект, чтобы зафиксировать цели, объём работ, сроки и бюджет.'}
           </p>
           {!archived && (
             <Link className="button button--primary" to="/app/projects/new">
-              Create your first project
+              Создать первый проект
             </Link>
           )}
         </section>
@@ -113,9 +118,9 @@ export function ProjectListPage({ archived = false }: { archived?: boolean }) {
       {projects.data && projects.data.results.length > 0 && (
         <>
           <ProjectRows projects={projects.data.results} />
-          <nav className="pagination" aria-label="Project list pages">
+          <nav className="pagination" aria-label="Страницы списка проектов">
             <span>
-              {projects.data.count} {projects.data.count === 1 ? 'project' : 'projects'}
+              {projects.data.count} {projectCountLabel(projects.data.count)}
             </span>
             <div className="pagination__actions">
               <button
@@ -124,16 +129,16 @@ export function ProjectListPage({ archived = false }: { archived?: boolean }) {
                 onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
                 type="button"
               >
-                Previous
+                Назад
               </button>
-              <span aria-live="polite">Page {page}</span>
+              <span aria-live="polite">Страница {page}</span>
               <button
                 className="button button--secondary"
                 disabled={!projects.data.next || projects.isFetching}
                 onClick={() => setPage((currentPage) => currentPage + 1)}
                 type="button"
               >
-                Next
+                Далее
               </button>
             </div>
           </nav>

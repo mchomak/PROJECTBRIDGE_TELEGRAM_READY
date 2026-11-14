@@ -186,7 +186,7 @@ test('shows a loading state while project chat requests are pending', async () =
   const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
   renderChatPage(fetchMock);
 
-  expect((await screen.findByRole('status')).textContent).toContain('Loading project chat');
+  expect((await screen.findByRole('status')).textContent).toContain('Загрузка чата проекта');
 });
 
 test('shows a recoverable error state when REST history is unavailable', async () => {
@@ -202,9 +202,9 @@ test('shows a recoverable error state when REST history is unavailable', async (
   });
   renderChatPage(fetchMock);
 
-  const heading = await screen.findByRole('heading', { name: /open this chat/ });
-  expect(heading.textContent).toContain('We couldn’t open this chat');
-  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  const heading = await screen.findByRole('heading', { name: /открыть чат/ });
+  expect(heading.textContent).toContain('Не удалось открыть чат');
+  expect(screen.getByRole('button', { name: 'Попробовать снова' })).toBeTruthy();
 });
 
 test('renders REST history chronologically and loads an older cursor page', async () => {
@@ -220,13 +220,13 @@ test('renders REST history chronologically and loads an older cursor page', asyn
   });
   renderChatPage(fetchMock);
 
-  const list = await screen.findByRole('list', { name: 'Project messages' });
+  const list = await screen.findByRole('list', { name: 'Сообщения проекта' });
   expect(
     within(list)
       .getAllByRole('article')
       .map((item) => item.textContent),
   ).toEqual([expect.stringContaining('Later message')]);
-  fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Загрузить предыдущие сообщения' }));
 
   expect(await within(list).findByText('Earlier message')).toBeTruthy();
   const renderedMessages = within(list).getAllByRole('article');
@@ -260,15 +260,15 @@ test('keeps a failed draft and retries with the original client ID and content',
   });
   renderChatPage(fetchMock);
 
-  const composer = await screen.findByRole('textbox', { name: /Message/ });
+  const composer = await screen.findByRole('textbox', { name: /Сообщение/ });
   fireEvent.change(composer, { target: { value: 'Keep this message for retry.' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }));
 
-  expect((await screen.findByRole('alert')).textContent).toContain('Connection lost');
-  fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Не удалось выполнить запрос');
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить отправку' }));
   await waitFor(() => expect(sentRequests).toHaveLength(2));
   expect(sentRequests[1]).toEqual(sentRequests[0]);
-  expect(await screen.findByText('Sent')).toBeTruthy();
+  expect(await screen.findByText('Отправлено')).toBeTruthy();
 });
 
 test('preserves compose text after a REST rate limit and can retry the message', async () => {
@@ -299,14 +299,16 @@ test('preserves compose text after a REST rate limit and can retry the message',
   });
   renderChatPage(fetchMock);
 
-  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  const composer = (await screen.findByRole('textbox', {
+    name: /Сообщение/,
+  })) as HTMLTextAreaElement;
   const content = 'Keep this message while the chat limit resets.';
   fireEvent.change(composer, { target: { value: content } });
-  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }));
 
-  expect((await screen.findByRole('alert')).textContent).toContain('rate limit');
+  expect((await screen.findByRole('alert')).textContent).toContain('Слишком много запросов');
   expect(composer.value).toBe(content);
-  fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить отправку' }));
   await waitFor(() => expect(sentRequests).toHaveLength(2));
   expect(sentRequests[1]).toEqual(sentRequests[0]);
   await waitFor(() => expect(composer.value).toBe(''));
@@ -343,18 +345,20 @@ test('deduplicates WebSocket events and reloads REST history after reconnect', a
   });
   renderChatPage(fetchMock);
 
-  expect(await screen.findByRole('heading', { name: 'No messages yet' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Сообщений пока нет' })).toBeTruthy();
   await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
   const firstSocket = MockWebSocket.instances[0];
   expect(firstSocket.url).toBe(`ws://localhost:3000/ws/v1/projects/${projectId}/chat/`);
 
   act(() => firstSocket.receive({ type: 'message.created', message: liveMessage }));
-  const list = await screen.findByRole('list', { name: 'Project messages' });
+  const list = await screen.findByRole('list', { name: 'Сообщения проекта' });
   expect(await within(list).findByText('Delivered live.')).toBeTruthy();
   act(() => firstSocket.receive({ type: 'message.created', message: liveMessage }));
   expect(within(list).getAllByRole('article')).toHaveLength(1);
 
-  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  const composer = (await screen.findByRole('textbox', {
+    name: /Сообщение/,
+  })) as HTMLTextAreaElement;
   fireEvent.change(composer, { target: { value: 'Keep composing through reconnect.' } });
   includeHistory = true;
   act(() => firstSocket.close(1006, 'Network disconnected'));
@@ -387,11 +391,11 @@ test('shows an empty message state and disables sending for a completed project'
   });
   renderChatPage(fetchMock);
 
-  expect(await screen.findByRole('heading', { name: 'No messages yet' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Сообщений пока нет' })).toBeTruthy();
   expect(
-    screen.getByText('This project is completed; the chat history is read only.'),
+    screen.getByText('Статус проекта: Завершён. История чата доступна только для чтения.'),
   ).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: /Message/ })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: /Сообщение/ })).toBeNull();
 });
 
 test('keeps a WebSocket-confirmed send as sent when the REST response fails', async () => {
@@ -408,9 +412,9 @@ test('keeps a WebSocket-confirmed send as sent when the REST response fails', as
     return baseFetch(input, init);
   });
   renderChatPage(fetchMock);
-  const composer = await screen.findByRole('textbox', { name: /Message/ });
+  const composer = await screen.findByRole('textbox', { name: /Сообщение/ });
   fireEvent.change(composer, { target: { value: 'Already delivered' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }));
   await waitFor(() => expect(submitted).toBeDefined());
   act(() =>
     MockWebSocket.instances[0].receive({
@@ -424,9 +428,9 @@ test('keeps a WebSocket-confirmed send as sent when the REST response fails', as
     }),
   );
   act(() => failRequest?.(jsonResponse({ detail: 'Network error' }, 500)));
-  await waitFor(() => expect(screen.getByText('Sent')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Отправлено')).toBeTruthy());
   expect((composer as HTMLTextAreaElement).value).toBe('');
-  expect(screen.queryByRole('button', { name: 'Retry message' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Повторить отправку' })).toBeNull();
 });
 
 test('keeps distinct messages when participants use the same client message ID', async () => {
@@ -483,7 +487,7 @@ test('does not carry live messages or draft text into another project chat', asy
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  const composer = await screen.findByRole('textbox', { name: /Message/ });
+  const composer = await screen.findByRole('textbox', { name: /Сообщение/ });
   fireEvent.change(composer, { target: { value: 'Private draft' } });
   await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
   act(() =>
@@ -496,7 +500,9 @@ test('does not carry live messages or draft text into another project chat', asy
   fireEvent.click(screen.getByRole('link', { name: 'Other chat' }));
   expect(await screen.findByRole('heading', { name: 'Other project' })).toBeTruthy();
   expect(screen.queryByText('Previous project message')).toBeNull();
-  expect((screen.getByRole('textbox', { name: /Message/ }) as HTMLTextAreaElement).value).toBe('');
+  expect((screen.getByRole('textbox', { name: /Сообщение/ }) as HTMLTextAreaElement).value).toBe(
+    '',
+  );
 });
 
 test('REST history confirms a failed send and preserves a subsequently edited draft', async () => {
@@ -518,14 +524,18 @@ test('REST history confirms a failed send and preserves a subsequently edited dr
     return baseFetch(input, init);
   });
   renderChatPage(fetchMock);
-  const composer = (await screen.findByRole('textbox', { name: /Message/ })) as HTMLTextAreaElement;
+  const composer = (await screen.findByRole('textbox', {
+    name: /Сообщение/,
+  })) as HTMLTextAreaElement;
   fireEvent.change(composer, { target: { value: 'Saved but response lost' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }));
   expect(await screen.findByRole('alert')).toBeTruthy();
   fireEvent.change(composer, { target: { value: 'A new draft' } });
   act(() => MockWebSocket.instances[0].close(1006));
   await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry message' })).toBeNull());
-  expect(screen.getByText('Sent')).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Повторить отправку' })).toBeNull(),
+  );
+  expect(screen.getByText('Отправлено')).toBeTruthy();
   expect(composer.value).toBe('A new draft');
 });

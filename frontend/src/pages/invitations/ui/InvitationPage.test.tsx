@@ -69,7 +69,7 @@ test('shows a loading state while invitation preview is pending', async () => {
   await waitFor(() => expect(finishPreview).toBeTypeOf('function'));
   finishPreview?.(jsonResponse(preview));
   expect(
-    await screen.findByRole('heading', { name: 'You’re invited to Customer website' }),
+    await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' }),
   ).toBeTruthy();
 });
 
@@ -99,10 +99,10 @@ test('invitation preview removes the fragment and sends the token only in the pr
   render(<App />);
 
   expect(
-    await screen.findByRole('heading', { name: 'You’re invited to Customer website' }),
+    await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' }),
   ).toBeTruthy();
-  expect(await screen.findByLabelText('Email')).toBeTruthy();
-  expect(screen.getByLabelText('Password')).toBeTruthy();
+  expect(await screen.findByLabelText('Электронная почта')).toBeTruthy();
+  expect(screen.getByLabelText('Пароль')).toBeTruthy();
   expect(window.location.pathname).toBe('/invite/');
   expect(window.location.hash).toBe('');
   expect(localStorageWrite).not.toHaveBeenCalled();
@@ -191,18 +191,20 @@ test('invited customer can log in, accept, and enter the customer project', asyn
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'You’re invited to Customer website' });
-  fireEvent.change(screen.getByLabelText('Email'), {
+  await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' });
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'customer@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'correct-horse-battery' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Accept invitation' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Принять приглашение' }));
 
-  expect(await screen.findByRole('heading', { name: 'Accepted customer project' })).toBeTruthy();
+  expect(
+    (await screen.findAllByRole('heading', { name: 'Accepted customer project' })).length,
+  ).toBeGreaterThan(0);
   expect(window.location.pathname).toBe(`/app/projects/${projectId}`);
   expect(
     fetchMock.mock.calls.some(([input]) => String(input) === `/api/v1/projects/${projectId}/`),
@@ -237,27 +239,27 @@ test('invited customer can register and sees the verification handoff', async ()
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'You’re invited to Customer website' });
-  fireEvent.click(screen.getByRole('button', { name: 'Create an account' }));
-  fireEvent.change(screen.getByLabelText('Email'), {
+  await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' });
+  fireEvent.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
+  fireEvent.change(screen.getByLabelText('Электронная почта'), {
     target: { value: 'customer@example.com' },
   });
-  fireEvent.change(screen.getByLabelText('Password'), {
+  fireEvent.change(screen.getByLabelText('Пароль'), {
     target: { value: 'strong-password-value' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
 
   expect(await screen.findByText(/verification email/i)).toBeTruthy();
   expect(window.location.hash).toBe('');
 });
 
 test.each([
-  [404, 'not_found', 'This invitation link is invalid'],
-  [410, 'invitation_expired', 'This invitation has expired'],
-  [410, 'invitation_revoked', 'This invitation was revoked'],
-  [409, 'project_completed', 'This project is complete'],
-  [409, 'project_archived', 'This project is archived'],
-  [429, 'throttled', 'Too many invitation checks'],
+  [404, 'not_found', 'Ссылка приглашения недействительна'],
+  [410, 'invitation_expired', 'Срок действия приглашения истёк'],
+  [410, 'invitation_revoked', 'Приглашение отозвано'],
+  [409, 'project_completed', 'Проект завершён'],
+  [409, 'project_archived', 'Проект в архиве'],
+  [429, 'throttled', 'Слишком много проверок приглашения'],
 ] as const)('shows a safe invitation state for %s %s', async (status, code, title) => {
   window.history.replaceState({}, '', '/invite/#token=email-link-secret');
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -302,11 +304,13 @@ test('a verified user with a different email sees a recoverable mismatch state',
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'You’re invited to Customer website' });
-  fireEvent.click(await screen.findByRole('button', { name: 'Accept invitation' }));
+  await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Принять приглашение' }));
 
-  expect(await screen.findByText(/invitation belongs to c\*\*\*@example\.com/i)).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Use another account' })).toBeTruthy();
+  expect(
+    await screen.findByText(/приглашение предназначено для c\*\*\*@example\.com/i),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Использовать другой аккаунт' })).toBeTruthy();
 });
 
 test('acceptance expiry shows the expired state and removes the accept action', async () => {
@@ -328,13 +332,13 @@ test('acceptance expiry shows the expired state and removes the accept action', 
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'You’re invited to Customer website' });
-  fireEvent.click(await screen.findByRole('button', { name: 'Accept invitation' }));
+  await screen.findByRole('heading', { name: 'Вас пригласили в проект «Customer website»' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Принять приглашение' }));
 
   expect(
-    await screen.findByText('Ask the project executor to send a new invitation.'),
+    await screen.findByText('Попросите исполнителя отправить новое приглашение.'),
   ).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Accept invitation' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Принять приглашение' })).toBeNull();
 });
 
 test('unverified invited user can refresh the account state after email verification', async () => {
@@ -359,9 +363,11 @@ test('unverified invited user can refresh the account state after email verifica
   render(<App />);
 
   expect(
-    await screen.findByRole('heading', { name: 'Verify your email to continue' }),
+    await screen.findByRole('heading', {
+      name: 'Подтвердите адрес электронной почты, чтобы продолжить',
+    }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'I’ve verified my email' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Я подтвердил адрес' }));
 
-  expect(await screen.findByRole('button', { name: 'Accept invitation' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Принять приглашение' })).toBeTruthy();
 });

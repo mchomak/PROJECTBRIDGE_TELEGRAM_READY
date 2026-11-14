@@ -1,3 +1,4 @@
+import { apiErrorMessage, apiFieldErrorMessage } from '../i18n/errors';
 import type { components } from './generated/schema';
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
@@ -10,7 +11,7 @@ export class ApiError extends Error {
   readonly payload: ApiErrorPayload | null;
 
   constructor(status: number, payload: ApiErrorPayload | null) {
-    super(payload?.detail ?? `The request failed with status ${status}.`);
+    super(apiErrorMessage(status, payload?.detail));
     this.name = 'ApiError';
     this.status = status;
     this.payload = payload;
@@ -25,10 +26,10 @@ export function getApiFieldErrors(error: unknown): Record<string, string[]> {
 
   return Object.fromEntries(
     Object.entries(errors).flatMap(([field, value]) => {
-      if (typeof value === 'string') return [[field, [value]]];
+      if (typeof value === 'string') return [[field, [apiFieldErrorMessage(value)]]];
       if (Array.isArray(value)) {
         const messages = value.filter((message): message is string => typeof message === 'string');
-        return messages.length ? [[field, messages]] : [];
+        return messages.length ? [[field, messages.map(apiFieldErrorMessage)]] : [];
       }
       return [];
     }),
@@ -75,7 +76,10 @@ async function getCsrfToken(): Promise<string> {
       const token =
         readCookie('csrftoken') ??
         (payload as components['schemas']['CsrfToken'] | null)?.csrf_token;
-      if (!token) throw new Error('The server did not provide a CSRF token.');
+      if (!token)
+        throw new Error(
+          'Не удалось подтвердить безопасность запроса. Обновите страницу и попробуйте снова.',
+        );
       return token;
     })();
   }

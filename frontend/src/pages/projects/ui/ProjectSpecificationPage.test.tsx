@@ -220,9 +220,9 @@ test('executor can edit and save the current Markdown version', async () => {
   const fetchMock = specificationFetch();
   renderPage(fetchMock, executor);
 
-  const editor = await screen.findByRole('textbox', { name: 'Markdown content' });
+  const editor = await screen.findByRole('textbox', { name: 'Текст Markdown' });
   fireEvent.input(editor, { target: { value: '# Revised draft' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save specification' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить спецификацию' }));
 
   expect(await screen.findByText('Saved version 2.')).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledWith(
@@ -238,9 +238,9 @@ test('executor can clear the Markdown draft and save an empty body', async () =>
   const fetchMock = specificationFetch();
   renderPage(fetchMock, executor);
 
-  const editor = await screen.findByRole('textbox', { name: 'Markdown content' });
+  const editor = await screen.findByRole('textbox', { name: 'Текст Markdown' });
   fireEvent.input(editor, { target: { value: '' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save specification' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить спецификацию' }));
 
   expect(await screen.findByText('Saved version 2.')).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledWith(
@@ -256,9 +256,9 @@ test('executor can queue async generation and sees the polling state', async () 
   const fetchMock = specificationFetch();
   renderPage(fetchMock, executor);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Generate draft' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать черновик' }));
 
-  expect(await screen.findByText('Waiting for generation to start')).toBeTruthy();
+  expect(await screen.findByText('Ожидание начала создания')).toBeTruthy();
   const generateCall = fetchMock.mock.calls.find(
     ([url, init]) =>
       String(url) === `/api/v1/projects/${projectId}/specification/generate/` &&
@@ -279,14 +279,14 @@ test.each(['queue_unavailable', 'worker_backlog'])(
     });
     renderPage(fetchMock, executor);
 
-    expect(await screen.findByText('Generation has not started')).toBeTruthy();
+    expect(await screen.findByText('Создание ещё не запущено')).toBeTruthy();
     const warning =
-      'This generation is waiting for processing. The system will keep retrying; the current draft is unchanged.';
+      'Создание ожидает обработки. Система продолжит попытки; текущий черновик не изменён.';
     expect(await screen.findByText(warning)).toBeTruthy();
     await waitFor(
       () => {
         expect(screen.queryByText(warning)).toBeNull();
-        expect(screen.getByText('Waiting for generation to start')).toBeTruthy();
+        expect(screen.getByText('Ожидание начала создания')).toBeTruthy();
       },
       { timeout: 5_000 },
     );
@@ -297,14 +297,14 @@ test('executor sees generated content after polling completes without reloading'
   const fetchMock = specificationFetch({ completeAfterPoll: true });
   renderPage(fetchMock, executor);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Generate draft' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать черновик' }));
 
-  expect(await screen.findByText('Waiting for generation to start')).toBeTruthy();
+  expect(await screen.findByText('Ожидание начала создания')).toBeTruthy();
   await waitFor(
     () => {
-      expect(screen.getByText('Latest generation completed')).toBeTruthy();
+      expect(screen.getByText('Последнее создание завершено')).toBeTruthy();
       expect(
-        (screen.getByRole('textbox', { name: 'Markdown content' }) as HTMLTextAreaElement).value,
+        (screen.getByRole('textbox', { name: 'Текст Markdown' }) as HTMLTextAreaElement).value,
       ).toBe('# Generated draft without reload');
     },
     { timeout: 5_000 },
@@ -322,25 +322,25 @@ test('customer sees the shared draft without editing or generation controls', as
   renderPage(fetchMock, customer);
 
   expect(await screen.findByText('# Current draft')).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: 'Markdown content' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Generate draft' })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: 'Текст Markdown' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Создать черновик' })).toBeNull();
 });
 
 test('executor sees stale-save conflict while their unsaved text remains', async () => {
   const fetchMock = specificationFetch({ staleSave: true });
   renderPage(fetchMock, executor);
 
-  const editor = await screen.findByRole('textbox', { name: 'Markdown content' });
+  const editor = await screen.findByRole('textbox', { name: 'Текст Markdown' });
   fireEvent.input(editor, { target: { value: '# My unsaved edit' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save specification' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить спецификацию' }));
 
   expect(
     await screen.findByRole('heading', {
-      name: 'This specification changed on the server',
+      name: 'Спецификация изменилась на сервере',
     }),
   ).toBeTruthy();
   expect((editor as HTMLTextAreaElement).value).toBe('# My unsaved edit');
-  expect(screen.getByRole('button', { name: 'Reload latest version' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Загрузить последнюю версию' })).toBeTruthy();
 });
 
 test('executor becomes read-only and keeps unsaved text if the project closes elsewhere', async () => {
@@ -350,17 +350,17 @@ test('executor becomes read-only and keeps unsaved text if the project closes el
   });
   renderPage(fetchMock, executor);
 
-  const editor = await screen.findByRole('textbox', { name: 'Markdown content' });
+  const editor = await screen.findByRole('textbox', { name: 'Текст Markdown' });
   fireEvent.input(editor, { target: { value: '# My unsaved edit' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save specification' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить спецификацию' }));
 
   expect(
     await screen.findByText(
-      'This project closed before your edit could be saved. The specification is now read-only; your unsaved text is preserved below.',
+      'Проект закрыт до сохранения изменений. Спецификация доступна только для чтения; несохранённый текст приведён ниже.',
     ),
   ).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: 'Markdown content' })).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Your unsaved edits' })).toBeTruthy();
+  expect(screen.queryByRole('textbox', { name: 'Текст Markdown' })).toBeNull();
+  expect(screen.getByRole('heading', { name: 'Ваши несохранённые изменения' })).toBeTruthy();
   expect(screen.getByText('# My unsaved edit')).toBeTruthy();
 });
 
@@ -368,16 +368,16 @@ test('generation conflict refetches a project closed in another tab', async () =
   const fetchMock = specificationFetch({ generationConflictCloseProject: true });
   renderPage(fetchMock, executor);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Generate draft' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Создать черновик' }));
 
   expect(
     await screen.findByText(
-      'This project closed while generation was starting. The specification is now read-only.',
+      'Проект закрыт во время запуска создания. Спецификация доступна только для чтения.',
     ),
   ).toBeTruthy();
-  expect(screen.getByText('Read-only for closed projects')).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: 'Markdown content' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Generate draft' })).toBeNull();
+  expect(screen.getByText('Для закрытых проектов доступен только просмотр')).toBeTruthy();
+  expect(screen.queryByRole('textbox', { name: 'Текст Markdown' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Создать черновик' })).toBeNull();
   expect(
     fetchMock.mock.calls.filter(([url]) => String(url) === `/api/v1/projects/${projectId}/`).length,
   ).toBeGreaterThan(1);
@@ -388,8 +388,8 @@ test('completed projects show a read-only specification to the executor', async 
   renderPage(fetchMock, executor);
 
   expect(await screen.findByText('# Current draft')).toBeTruthy();
-  expect(screen.getByText('Read-only for closed projects')).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: 'Markdown content' })).toBeNull();
+  expect(screen.getByText('Для закрытых проектов доступен только просмотр')).toBeTruthy();
+  expect(screen.queryByRole('textbox', { name: 'Текст Markdown' })).toBeNull();
 });
 
 test('executor receives an actionable message when generation context is too large', async () => {
@@ -415,8 +415,8 @@ test('executor can retry after bounded worker-dispatch recovery is exhausted', a
 
   expect(
     await screen.findByText(
-      'The generation worker could not be reached after several attempts. Your current draft was kept; you can start a new generation.',
+      'Не удалось связаться с обработчиком после нескольких попыток. Текущий черновик сохранён; можно запустить создание заново.',
     ),
   ).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Generate draft' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Создать черновик' })).toBeTruthy();
 });

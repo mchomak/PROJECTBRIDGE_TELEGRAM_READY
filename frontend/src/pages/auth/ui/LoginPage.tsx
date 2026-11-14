@@ -32,9 +32,9 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="login-title">
-        <h1 id="login-title">Log in</h1>
+        <h1 id="login-title">Войти</h1>
         <form onSubmit={submit} noValidate>
-          <label htmlFor="login-email">Email</label>
+          <label htmlFor="login-email">Электронная почта</label>
           <input
             autoComplete="email"
             id="login-email"
@@ -50,7 +50,7 @@ export function LoginPage() {
             </p>
           ))}
 
-          <label htmlFor="login-password">Password</label>
+          <label htmlFor="login-password">Пароль</label>
           <input
             autoComplete="current-password"
             id="login-password"
@@ -71,11 +71,11 @@ export function LoginPage() {
           )}
 
           <button disabled={login.isPending} type="submit">
-            {login.isPending ? 'Logging in…' : 'Log in'}
+            {login.isPending ? 'Вход…' : 'Войти'}
           </button>
         </form>
         <p>
-          New to ProjectBridge? <Link to="/register">Create an account</Link>
+          Впервые в ProjectBridge? <Link to="/register">Создать аккаунт</Link>
         </p>
       </section>
     </main>

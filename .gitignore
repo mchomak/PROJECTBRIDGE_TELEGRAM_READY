@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 graphify-out
+.playwright-mcp
 # Node and frontend build output
 node_modules/
 frontend/node_modules/

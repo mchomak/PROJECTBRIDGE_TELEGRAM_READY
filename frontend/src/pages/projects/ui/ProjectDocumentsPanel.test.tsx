@@ -134,14 +134,16 @@ test('validates file extension and retains a failed upload for retry with progre
 
   renderPanel();
   expect(await screen.findByText('scope.txt')).toBeTruthy();
-  expect(screen.getByText('Queued · not searchable')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Активные' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Архив' })).toBeTruthy();
+  expect(screen.getByText('В очереди · недоступен для поиска')).toBeTruthy();
 
-  const input = screen.getByLabelText('Choose a document') as HTMLInputElement;
+  const input = screen.getByLabelText('Выберите документ') as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File(['no'], 'notes.exe', { type: 'text/plain' })] },
   });
-  expect(await screen.findByText('Choose a PDF, DOCX, TXT, or Markdown file.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Upload document' }).hasAttribute('disabled')).toBe(
+  expect(await screen.findByText('Выберите файл PDF, DOCX, TXT или Markdown.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Загрузить документ' }).hasAttribute('disabled')).toBe(
     true,
   );
   expect(FakeXmlHttpRequest.requests).toHaveLength(0);
@@ -149,7 +151,7 @@ test('validates file extension and retains a failed upload for retry with progre
   fireEvent.change(input, {
     target: { files: [new File(['scope'], 'scope.md', { type: 'application/pdf' })] },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Загрузить документ' }));
   await waitFor(() => expect(FakeXmlHttpRequest.requests).toHaveLength(1));
 
   const firstAttempt = FakeXmlHttpRequest.requests[0];
@@ -167,12 +169,12 @@ test('validates file extension and retains a failed upload for retry with progre
     request_id: '2f99e906-7337-4e2d-a46f-f20908f3dd4b',
   });
 
-  expect(await screen.findByText('Temporary upload failure.')).toBeTruthy();
-  expect((screen.getByLabelText('Choose a document') as HTMLInputElement).files?.[0]?.name).toBe(
+  expect(await screen.findByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  expect((screen.getByLabelText('Выберите документ') as HTMLInputElement).files?.[0]?.name).toBe(
     'scope.md',
   );
 
-  fireEvent.click(screen.getByRole('button', { name: 'Retry upload' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }));
   await waitFor(() => expect(FakeXmlHttpRequest.requests).toHaveLength(2));
   const retry = FakeXmlHttpRequest.requests[1];
   retry.reportProgress(80, 100);
@@ -188,7 +190,7 @@ test('validates file extension and retains a failed upload for retry with progre
   documents = [uploaded, ...documents];
 
   expect(await screen.findByText('scope.md uploaded. Processing is queued.')).toBeTruthy();
-  expect(await screen.findAllByText('Queued · not searchable')).toHaveLength(2);
+  expect(await screen.findAllByText('В очереди · недоступен для поиска')).toHaveLength(2);
   expect(await screen.findByText('scope.md')).toBeTruthy();
 });
 
@@ -218,11 +220,10 @@ test.each(['queue_unavailable', 'worker_backlog'])(
     vi.stubGlobal('fetch', fetchMock);
 
     renderPanel();
-    const warning =
-      'The upload is saved and waiting for processing. The system will keep retrying; processing has not started.';
+    const warning = 'Файл сохранён и ожидает обработки. Система продолжит попытки запуска.';
     expect(await screen.findByText(warning)).toBeTruthy();
-    expect(screen.getByText('Waiting for processing · retrying')).toBeTruthy();
-    expect(await screen.findByText('Ready to search', {}, { timeout: 6_000 })).toBeTruthy();
+    expect(screen.getByText('Ожидание обработки · повторная попытка')).toBeTruthy();
+    expect(await screen.findByText('Доступен для поиска', {}, { timeout: 6_000 })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(warning)).toBeNull());
     expect(documentReads).toBeGreaterThan(1);
   },
@@ -285,13 +286,13 @@ test('archive request explains both-party consent and keeps a retry after a temp
   renderPanel();
   expect(await screen.findByText('scope.txt')).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Request archive' }));
-  expect(await screen.findByText('The archive request could not be sent.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Retry archive request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Запросить архивирование' }));
+  expect(await screen.findByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить запрос на архивирование' }));
 
-  expect(await screen.findByText('Archive consent: 1 of 2 participants.')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Approve archive' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Reject archive' })).toBeNull();
+  expect(await screen.findByText('Согласие на архивирование: 1 of 2 participants.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Подтвердить архивирование' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Отклонить архивирование' })).toBeNull();
   expect(requestAttempts).toBe(2);
 });
 
@@ -335,11 +336,11 @@ test('refreshes lifecycle state when the server commits but the response is lost
 
   renderPanel();
   expect(await screen.findByText('scope.txt')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Request archive' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Запросить архивирование' }));
 
   expect(await screen.findByText('Network response was lost.')).toBeTruthy();
-  expect(await screen.findByText('Archive consent: 1 of 2 participants.')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Request archive' })).toBeNull();
+  expect(await screen.findByText('Согласие на архивирование: 1 of 2 participants.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Запросить архивирование' })).toBeNull();
 });
 
 test('the other participant can approve an archive after seeing the pending consent count', async () => {
@@ -402,10 +403,10 @@ test('the other participant can approve an archive after seeing the pending cons
   vi.stubGlobal('fetch', fetchMock);
 
   renderPanel(customerId);
-  expect(await screen.findByText('Archive consent: 1 of 2 participants.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Approve archive' }));
+  expect(await screen.findByText('Согласие на архивирование: 1 of 2 participants.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить архивирование' }));
 
-  expect(await screen.findByText('No shared documents yet.')).toBeTruthy();
+  expect(await screen.findByText('Общих документов пока нет.')).toBeTruthy();
   expect(screen.queryByText('scope.txt')).toBeNull();
 });
 
@@ -462,12 +463,12 @@ test('deletion view shows a cancellation countdown and returns a cancelled docum
   vi.stubGlobal('fetch', fetchMock);
 
   renderPanel(customerId);
-  fireEvent.click(screen.getByRole('button', { name: 'Deletion pending' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Ожидает удаления' }));
 
   expect(await screen.findByText(/\d+d \d+h \d+m until permanent deletion\./)).toBeTruthy();
-  expect(screen.getByText(/Encrypted backups may retain a copy/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel permanent deletion' }));
+  expect(screen.getByText(/Зашифрованная резервная копия может сохраняться/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Отменить окончательное удаление' }));
 
-  expect(await screen.findByText('No shared documents yet.')).toBeTruthy();
+  expect(await screen.findByText('Общих документов пока нет.')).toBeTruthy();
   expect(screen.queryByText('scope.txt')).toBeNull();
 });

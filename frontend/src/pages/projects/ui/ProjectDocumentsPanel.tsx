@@ -18,10 +18,10 @@ const SUPPORTED_EXTENSIONS = new Set(['pdf', 'docx', 'txt', 'md', 'markdown']);
 function validateFile(file: File): string | null {
   const extension = file.name.split('.').at(-1)?.toLowerCase();
   if (!extension || !SUPPORTED_EXTENSIONS.has(extension)) {
-    return 'Choose a PDF, DOCX, TXT, or Markdown file.';
+    return 'Выберите файл PDF, DOCX, TXT или Markdown.';
   }
   if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
-    return 'Files must be 20 MiB or smaller.';
+    return 'Размер файла не должен превышать 20 МиБ.';
   }
   return null;
 }
@@ -33,11 +33,11 @@ function formatFileSize(size: number): string {
 }
 
 function processingLabel(status: ProjectDocument['processing_status']): string {
-  if (status === 'queued') return 'Queued · not searchable';
-  if (status === 'processing') return 'Processing · not searchable';
-  if (status === 'ready') return 'Ready to search';
-  if (status === 'failed') return 'Processing failed · not searchable';
-  return 'Unsupported · not searchable';
+  if (status === 'queued') return 'В очереди · недоступен для поиска';
+  if (status === 'processing') return 'Обработка · недоступен для поиска';
+  if (status === 'ready') return 'Доступен для поиска';
+  if (status === 'failed') return 'Ошибка обработки · недоступен для поиска';
+  return 'Не поддерживается · недоступен для поиска';
 }
 
 function processingDispatchWarning(document: ProjectDocument): string | null {
@@ -48,13 +48,13 @@ function processingDispatchWarning(document: ProjectDocument): string | null {
     return null;
   }
   return document.processing_status === 'queued'
-    ? 'The upload is saved and waiting for processing. The system will keep retrying; processing has not started.'
-    : 'The document worker has not claimed the recovery attempt. The system will keep retrying; the document is not searchable.';
+    ? 'Файл сохранён и ожидает обработки. Система продолжит попытки запуска.'
+    : 'Обработчик ещё не приступил к восстановлению. Система продолжит попытки; документ недоступен для поиска.';
 }
 
 function remainingTime(deadline: string, now: number): string {
   const remainingMinutes = Math.ceil((new Date(deadline).getTime() - now) / 60_000);
-  if (remainingMinutes <= 0) return 'The cancellation window has ended. Deletion is queued.';
+  if (remainingMinutes <= 0) return 'Срок отмены истёк. Удаление поставлено в очередь.';
 
   const days = Math.floor(remainingMinutes / (24 * 60));
   const hours = Math.floor((remainingMinutes % (24 * 60)) / 60);
@@ -64,8 +64,8 @@ function remainingTime(deadline: string, now: number): string {
 
 function retryLabel(label: string, failed: boolean): string {
   if (!failed) return label;
-  if (label === 'Request archive') return 'Retry archive request';
-  if (label === 'Request permanent deletion') return 'Retry deletion request';
+  if (label === 'Запросить архивирование') return 'Повторить запрос на архивирование';
+  if (label === 'Запросить окончательное удаление') return 'Повторить запрос на удаление';
   return `Retry ${label.toLowerCase()}`;
 }
 
@@ -156,30 +156,32 @@ export function ProjectDocumentsPanel({
     try {
       await downloadProjectDocument(document.id, document.original_filename);
     } catch (error) {
-      setDownloadError(
-        error instanceof Error ? error.message : 'The document could not be downloaded.',
-      );
+      setDownloadError(error instanceof Error ? error.message : 'Не удалось скачать документ.');
     } finally {
       setDownloadingId(null);
     }
   }
 
   return (
-    <section className="project-panel documents-panel" aria-labelledby="documents-title">
+    <section
+      id="documents"
+      className="project-panel documents-panel"
+      aria-labelledby="documents-title"
+    >
       <div className="section-heading">
         <div>
-          <h2 id="documents-title">Shared documents</h2>
+          <h2 id="documents-title">Общие документы</h2>
           <p className="section-heading__description">
-            Both project participants can upload and download these files.
+            Оба участника проекта могут загружать и скачивать эти файлы.
           </p>
         </div>
-        <span className="section-heading__note">20 MiB max</span>
+        <span className="section-heading__note">Не более 20 МиБ</span>
       </div>
 
       {canUpload ? (
         <form className="document-upload" onSubmit={submitUpload} noValidate>
           <div className="form-field">
-            <label htmlFor="project-document-file">Choose a document</label>
+            <label htmlFor="project-document-file">Выберите документ</label>
             <input
               accept=".pdf,.docx,.txt,.md,.markdown"
               aria-describedby={validationError ? 'document-upload-error' : undefined}
@@ -209,19 +211,19 @@ export function ProjectDocumentsPanel({
               {upload.isPending
                 ? 'Uploading…'
                 : upload.isError
-                  ? 'Retry upload'
-                  : 'Upload document'}
+                  ? 'Повторить загрузку'
+                  : 'Загрузить документ'}
             </button>
           </div>
           {upload.isPending && (
             <div className="document-upload__progress">
-              <progress aria-label="Document upload progress" max={100} value={uploadProgress} />
+              <progress aria-label="Ход загрузки документа" max={100} value={uploadProgress} />
               <span role="status">{uploadProgress}% uploaded</span>
             </div>
           )}
           {upload.isError && (
             <p className="form-error" role="alert">
-              {upload.error.message || 'The upload failed. Your selected file is ready to retry.'}
+              {upload.error.message || 'Не удалось загрузить файл. Попробуйте снова.'}
             </p>
           )}
           {uploadSuccess && (
@@ -232,17 +234,17 @@ export function ProjectDocumentsPanel({
         </form>
       ) : (
         <p className="document-upload__readonly">
-          Uploading is available while the project is a draft or active.
+          Загрузка доступна, пока проект находится в черновике или активен.
         </p>
       )}
 
       <fieldset className="document-views">
-        <legend>Document views</legend>
+        <legend>Представления документов</legend>
         {(
           [
-            ['active', 'Active'],
-            ['archived', 'Archive'],
-            ['deletion_pending', 'Deletion pending'],
+            ['active', 'Активные'],
+            ['archived', 'Архив'],
+            ['deletion_pending', 'Ожидает удаления'],
           ] as const
         ).map(([status, label]) => (
           <button
@@ -262,8 +264,8 @@ export function ProjectDocumentsPanel({
 
       {!canManageLifecycle && (
         <p className="document-upload__readonly">
-          New lifecycle actions, decisions, and restoration are available while the project is a
-          draft or active.
+          Действия с документами и их восстановление доступны, пока проект находится в черновике или
+          активен.
         </p>
       )}
 
@@ -274,7 +276,7 @@ export function ProjectDocumentsPanel({
       )}
       {lifecycle.error && (
         <p className="form-error" role="alert">
-          {lifecycle.error.message || 'The document lifecycle action could not be completed.'}
+          {lifecycle.error.message || 'Не удалось выполнить действие с документом.'}
         </p>
       )}
       {lifecycleMessage && (
@@ -285,22 +287,22 @@ export function ProjectDocumentsPanel({
 
       {documents.isPending ? (
         <p className="state-message" role="status">
-          Loading shared documents…
+          Загрузка общих документов…
         </p>
       ) : documents.isError ? (
         <section className="state-message state-message--error" aria-labelledby="documents-error">
-          <h3 id="documents-error">We couldn’t load the documents</h3>
-          <p>{documents.error.message || 'Check your connection and try again.'}</p>
+          <h3 id="documents-error">Не удалось загрузить документы</h3>
+          <p>{documents.error.message || 'Проверьте подключение и попробуйте снова.'}</p>
           <button
             className="button button--secondary"
             onClick={() => void documents.refetch()}
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </section>
       ) : documents.data.results.length === 0 ? (
-        <p className="document-empty-state">No shared documents yet.</p>
+        <p className="document-empty-state">Общих документов пока нет.</p>
       ) : (
         <>
           <p className="document-count">
@@ -322,7 +324,7 @@ export function ProjectDocumentsPanel({
                       {['queue_unavailable', 'worker_backlog'].includes(
                         document.processing_dispatch_error_code,
                       )
-                        ? 'Waiting for processing · retrying'
+                        ? 'Ожидание обработки · повторная попытка'
                         : processingLabel(document.processing_status)}
                     </span>
                     <span>{new Date(document.created_at).toLocaleDateString()}</span>
@@ -352,13 +354,13 @@ export function ProjectDocumentsPanel({
                               documentId: document.id,
                               action: 'archive',
                             },
-                            'Archive request',
+                            'Запрос на архивирование',
                           )
                         }
                         type="button"
                       >
                         {retryLabel(
-                          'Request archive',
+                          'Запросить архивирование',
                           isFailedAction({
                             type: 'request',
                             documentId: document.id,
@@ -370,7 +372,7 @@ export function ProjectDocumentsPanel({
                     {document.lifecycle_status === 'archive_pending' && (
                       <div className="document-lifecycle-status">
                         <p role="status">
-                          Archive consent: {lifecycleRequest?.approvals.length ?? 1} of 2
+                          Согласие на архивирование: {lifecycleRequest?.approvals.length ?? 1} of 2
                           participants.
                         </p>
                         {canManageLifecycle &&
@@ -388,13 +390,13 @@ export function ProjectDocumentsPanel({
                                       documentId: document.id,
                                       requestId: lifecycleRequest.id,
                                     },
-                                    'Archive decision',
+                                    'Решение об архивировании',
                                   )
                                 }
                                 type="button"
                               >
                                 {retryLabel(
-                                  'Approve archive',
+                                  'Подтвердить архивирование',
                                   isFailedAction({
                                     type: 'approve',
                                     documentId: document.id,
@@ -412,13 +414,13 @@ export function ProjectDocumentsPanel({
                                       documentId: document.id,
                                       requestId: lifecycleRequest.id,
                                     },
-                                    'Archive decision',
+                                    'Решение об архивировании',
                                   )
                                 }
                                 type="button"
                               >
                                 {retryLabel(
-                                  'Reject archive',
+                                  'Отклонить архивирование',
                                   isFailedAction({
                                     type: 'reject',
                                     documentId: document.id,
@@ -435,7 +437,7 @@ export function ProjectDocumentsPanel({
                         {lifecycleRequest?.status === 'pending' ? (
                           <>
                             <p role="status">
-                              Deletion consent: {lifecycleRequest.approvals.length} of 2
+                              Согласие на удаление: {lifecycleRequest.approvals.length} of 2
                               participants.
                             </p>
                             {canManageLifecycle &&
@@ -452,13 +454,13 @@ export function ProjectDocumentsPanel({
                                           documentId: document.id,
                                           requestId: lifecycleRequest.id,
                                         },
-                                        'Deletion decision',
+                                        'Решение об удалении',
                                       )
                                     }
                                     type="button"
                                   >
                                     {retryLabel(
-                                      'Approve deletion',
+                                      'Подтвердить удаление',
                                       isFailedAction({
                                         type: 'approve',
                                         documentId: document.id,
@@ -476,13 +478,13 @@ export function ProjectDocumentsPanel({
                                           documentId: document.id,
                                           requestId: lifecycleRequest.id,
                                         },
-                                        'Deletion decision',
+                                        'Решение об удалении',
                                       )
                                     }
                                     type="button"
                                   >
                                     {retryLabel(
-                                      'Reject deletion',
+                                      'Отклонить удаление',
                                       isFailedAction({
                                         type: 'reject',
                                         documentId: document.id,
@@ -509,7 +511,7 @@ export function ProjectDocumentsPanel({
                                   type="button"
                                 >
                                   {retryLabel(
-                                    'Restore document',
+                                    'Восстановить документ',
                                     isFailedAction({ type: 'restore', documentId: document.id }),
                                   )}
                                 </button>
@@ -523,13 +525,13 @@ export function ProjectDocumentsPanel({
                                         documentId: document.id,
                                         action: 'permanent_delete',
                                       },
-                                      'Deletion request',
+                                      'Запрос на удаление',
                                     )
                                   }
                                   type="button"
                                 >
                                   {retryLabel(
-                                    'Request permanent deletion',
+                                    'Запросить окончательное удаление',
                                     isFailedAction({
                                       type: 'request',
                                       documentId: document.id,
@@ -540,12 +542,12 @@ export function ProjectDocumentsPanel({
                               </>
                             )}
                             <p>
-                              Permanent deletion requires both participants and has a 30-day
-                              cancellation window after the second approval.
+                              Для окончательного удаления нужно согласие обоих участников. После
+                              второго подтверждения удаление можно отменить в течение 30 дней.
                             </p>
                             <p>
-                              Encrypted backups may retain a copy until the applicable backup
-                              expires.
+                              Зашифрованная резервная копия может сохраняться до истечения её срока
+                              хранения.
                             </p>
                           </>
                         )}
@@ -559,8 +561,8 @@ export function ProjectDocumentsPanel({
                               {remainingTime(lifecycleRequest.deletion_after, clock)}
                             </p>
                             <p>
-                              Encrypted backups may retain a copy until the applicable backup
-                              expires.
+                              Зашифрованная резервная копия может сохраняться до истечения её срока
+                              хранения.
                             </p>
                             <button
                               className="button button--secondary"
@@ -575,13 +577,13 @@ export function ProjectDocumentsPanel({
                                     documentId: document.id,
                                     requestId: lifecycleRequest.id,
                                   },
-                                  'Deletion cancellation',
+                                  'Отмена удаления',
                                 )
                               }
                               type="button"
                             >
                               {retryLabel(
-                                'Cancel permanent deletion',
+                                'Отменить окончательное удаление',
                                 isFailedAction({
                                   type: 'cancel',
                                   documentId: document.id,
@@ -591,7 +593,9 @@ export function ProjectDocumentsPanel({
                             </button>
                           </>
                         ) : (
-                          <p role="status">Deletion is scheduled after both approvals.</p>
+                          <p role="status">
+                            Удаление запланировано после подтверждения обоими участниками.
+                          </p>
                         )}
                       </div>
                     )}
@@ -601,23 +605,23 @@ export function ProjectDocumentsPanel({
             })}
           </ul>
           {(documents.data.previous || documents.data.next) && (
-            <nav className="document-pagination" aria-label="Document pages">
+            <nav className="document-pagination" aria-label="Страницы документов">
               <button
                 className="button button--secondary"
                 disabled={!documents.data.previous || documents.isFetching}
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
                 type="button"
               >
-                Previous documents
+                Предыдущие документы
               </button>
-              <span>Page {page}</span>
+              <span>Страница {page}</span>
               <button
                 className="button button--secondary"
                 disabled={!documents.data.next || documents.isFetching}
                 onClick={() => setPage((current) => current + 1)}
                 type="button"
               >
-                Next documents
+                Следующие документы
               </button>
             </nav>
           )}

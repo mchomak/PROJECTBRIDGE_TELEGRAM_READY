@@ -29,21 +29,21 @@ export function VerificationRequiredPage() {
   return (
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="verification-required-title">
-        <h1 id="verification-required-title">Verify your email</h1>
-        <p>Confirm your email address to continue to ProjectBridge.</p>
+        <h1 id="verification-required-title">Подтвердите электронную почту</h1>
+        <p>Подтвердите адрес электронной почты, чтобы продолжить работу в ProjectBridge.</p>
         {state.email && state.sent ? (
-          <p>We sent a verification link to {state.email}.</p>
+          <p>Мы отправили ссылку подтверждения на адрес {state.email}.</p>
         ) : (
           state.email && (
             <p>
-              After you verify your email, log in again to continue. If you need a verification
-              email, request one below.
+              После подтверждения адреса войдите снова. При необходимости запросите новое письмо
+              ниже.
             </p>
           )
         )}
 
         <form onSubmit={submit} noValidate>
-          <label htmlFor="verification-email">Email</label>
+          <label htmlFor="verification-email">Электронная почта</label>
           <input
             autoComplete="email"
             id="verification-email"
@@ -62,15 +62,15 @@ export function VerificationRequiredPage() {
             <p role="alert">{resend.error.message}</p>
           )}
           {resendSent && (
-            <p role="status">If that address needs verification, a new message is on its way.</p>
+            <p role="status">Если адрес требует подтверждения, новое письмо уже отправлено.</p>
           )}
           <button disabled={resend.isPending || !email.trim()} type="submit">
-            {resend.isPending ? 'Sending…' : 'Resend verification email'}
+            {resend.isPending ? 'Отправка…' : 'Отправить письмо повторно'}
           </button>
         </form>
 
         <p>
-          Already verified? <Link to="/login">Log in</Link>
+          Уже подтвердили адрес? <Link to="/login">Войти</Link>
         </p>
       </section>
     </main>

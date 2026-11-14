@@ -1,0 +1,15 @@
+:root {
+  --forest: #173e2f;
+  --forest-hover: #285940;
+  --ink: #1d3125;
+  --muted: #637669;
+  --line: #e3ebe4;
+  --surface: #fff;
+  --canvas: #f5f8f5;
+  --teal: #317b55;
+  --teal-dark: #286846;
+  --teal-soft: #e9f4ea;
+  --danger: #a65242;
+  --danger-soft: #fff0ee;
+  --shadow: 0 8px 30px rgb(32 69 44 / 6.5%);
+}

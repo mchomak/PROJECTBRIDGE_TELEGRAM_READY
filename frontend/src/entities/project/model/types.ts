@@ -8,17 +8,17 @@ export type ProjectPage = components['schemas']['ProjectListResponse'];
 export type ProjectPassport = components['schemas']['ProjectPassportResponse'];
 
 export const projectTypeOptions: ReadonlyArray<{ value: ProjectType; label: string }> = [
-  { value: 'website', label: 'Website' },
-  { value: 'telegram_bot', label: 'Telegram bot' },
-  { value: 'automation', label: 'Automation' },
-  { value: 'other', label: 'Other' },
+  { value: 'website', label: 'Сайт' },
+  { value: 'telegram_bot', label: 'Telegram-бот' },
+  { value: 'automation', label: 'Автоматизация' },
+  { value: 'other', label: 'Другое' },
 ];
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {
-  draft: 'Draft',
-  active: 'Active',
-  completed: 'Completed',
-  archived: 'Archived',
+  draft: 'Черновик',
+  active: 'Активен',
+  completed: 'Завершён',
+  archived: 'В архиве',
 };
 
 export const projectQueryKeys = {

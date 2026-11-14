@@ -20,6 +20,10 @@ import {
   useSubmitQuestionnaire,
 } from '../../../features/questionnaire';
 import { ApiError, getApiFieldErrors } from '../../../shared/api';
+import {
+  questionnaireOptionLabel,
+  questionnaireQuestionLabel,
+} from '../../../shared/i18n/questionnaire';
 
 type VisibilityCondition = { question: string; equals: unknown };
 type SelectOption = { value: string; label: string };
@@ -109,12 +113,18 @@ function fieldErrorsFor(error: unknown, fieldErrors: Record<string, string[]>): 
 }
 
 function projectTypeLabel(projectType: string): string {
-  const label = projectType.replaceAll('_', ' ');
-  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+  const labels: Record<string, string> = {
+    website: 'Сайт',
+    telegram_bot: 'Telegram-бот',
+    automation: 'Автоматизация',
+    other: 'Другое',
+  };
+  return labels[projectType] ?? 'Другой тип проекта';
 }
 
 function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return 'Empty';
+  if (value === null || value === undefined || value === '') return 'Не указано';
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
   if (typeof value === 'string') return value;
   try {
     return JSON.stringify(value);
@@ -124,8 +134,20 @@ function displayValue(value: unknown): string {
 }
 
 function conflictFieldLabel(conflict: QuestionnaireConflict): string {
-  const question = conflict.mapped_field.split('.').at(-1) ?? conflict.mapped_field;
-  return question.replaceAll('_', ' ');
+  const labels: Record<string, string> = {
+    goal: 'Цель проекта',
+    target_audience: 'Целевая аудитория',
+    expected_result: 'Ожидаемый результат',
+    functional_scope: 'Функциональность',
+    integrations: 'Интеграции',
+    constraints: 'Ограничения',
+    deadline: 'Срок',
+    budget_min: 'Минимальный бюджет',
+    budget_max: 'Максимальный бюджет',
+    currency: 'Валюта',
+  };
+  const field = conflict.mapped_field.split('.').at(-1) ?? conflict.mapped_field;
+  return labels[field] ?? 'Поле паспорта';
 }
 
 export function QuestionnairePage() {
@@ -214,6 +236,20 @@ export function QuestionnairePage() {
     refreshDraftVersion.reset();
   }
 
+  function displayConflictValue(value: unknown, questionKey: string): string {
+    const question = questions.find((item) => item.key === questionKey);
+    if (question?.type === 'select' && typeof value === 'string') {
+      return questionnaireOptionLabel(
+        schema?.schema_key ?? '',
+        schema?.version ?? 0,
+        questionKey,
+        value,
+        value,
+      );
+    }
+    return displayValue(value);
+  }
+
   function renderQuestion(question: QuestionnaireQuestion) {
     const currentValue = answers[question.key];
     const htmlId = `questionnaire-${question.key}`;
@@ -242,13 +278,18 @@ export function QuestionnairePage() {
     return (
       <div className="form-field questionnaire-field" key={question.key}>
         <label htmlFor={htmlId}>
-          {question.label}
-          {question.required && <span> (required)</span>}
-          {!question.required && <span> (optional)</span>}
+          {questionnaireQuestionLabel(
+            schema?.schema_key ?? '',
+            schema?.version ?? 0,
+            question.key,
+            question.label,
+          )}
+          {question.required && <span> (обязательно)</span>}
+          {!question.required && <span> (необязательно)</span>}
         </label>
-        {origin === 'prefilled' && <p className="questionnaire-origin">From passport</p>}
+        {origin === 'prefilled' && <p className="questionnaire-origin">Из паспорта</p>}
         {origin === 'customer' && serverAnswer?.origin === 'prefilled' && (
-          <p className="questionnaire-origin">Entered by you</p>
+          <p className="questionnaire-origin">Введено вами</p>
         )}
         {question.type === 'textarea' || question.type === 'string_list' ? (
           <textarea
@@ -267,6 +308,7 @@ export function QuestionnairePage() {
             id={htmlId}
             aria-invalid={messages.length > 0}
             aria-required={question.required}
+            aria-describedby={messages.length ? `${htmlId}-error` : undefined}
             onChange={(event) =>
               changeAnswer(
                 question.key,
@@ -275,22 +317,29 @@ export function QuestionnairePage() {
             }
             value={fieldValue(question, currentValue)}
           >
-            <option value="">Choose yes or no</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
+            <option value="">Выберите да или нет</option>
+            <option value="true">Да</option>
+            <option value="false">Нет</option>
           </select>
         ) : question.type === 'select' ? (
           <select
             id={htmlId}
             aria-invalid={messages.length > 0}
             aria-required={question.required}
+            aria-describedby={messages.length ? `${htmlId}-error` : undefined}
             onChange={(event) => changeAnswer(question.key, event.currentTarget.value || undefined)}
             value={fieldValue(question, currentValue)}
           >
-            <option value="">Choose an option</option>
+            <option value="">Выберите вариант</option>
             {questionOptions(question).map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {questionnaireOptionLabel(
+                  schema?.schema_key ?? '',
+                  schema?.version ?? 0,
+                  question.key,
+                  option.value,
+                  option.label,
+                )}
               </option>
             ))}
           </select>
@@ -322,7 +371,7 @@ export function QuestionnairePage() {
     return (
       <main className="workspace-page">
         <p className="state-message" role="status">
-          Loading questionnaire...
+          Загрузка анкеты...
         </p>
       </main>
     );
@@ -335,14 +384,14 @@ export function QuestionnairePage() {
           className="state-message state-message--error"
           aria-labelledby="questionnaire-error-title"
         >
-          <h1 id="questionnaire-error-title">We couldn't load the questionnaire</h1>
-          <p>{loadError?.message || 'Check your connection and try again.'}</p>
+          <h1 id="questionnaire-error-title">Не удалось загрузить анкету</h1>
+          <p>{loadError?.message || 'Проверьте подключение и попробуйте снова.'}</p>
           <button
             className="button button--secondary"
             onClick={() => void retryLoad()}
             type="button"
           >
-            Try again
+            Попробовать снова
           </button>
         </section>
       </main>
@@ -353,8 +402,8 @@ export function QuestionnairePage() {
     return (
       <main className="workspace-page workspace-page--narrow">
         <section className="state-message state-message--error" role="alert">
-          <h1>Questionnaire access unavailable</h1>
-          <p>Your active project membership could not be confirmed.</p>
+          <h1>Нет доступа к анкете</h1>
+          <p>Не удалось подтвердить ваше участие в проекте.</p>
         </section>
       </main>
     );
@@ -399,16 +448,16 @@ export function QuestionnairePage() {
   return (
     <main className="workspace-page workspace-page--narrow questionnaire-page">
       <Link className="back-link" to={`/app/projects/${projectId}`}>
-        Back to project
+        К проекту
       </Link>
       <div className="page-heading">
         <div>
           <p className="project-overview-heading__type">
             {projectTypeLabel(questionnaireQuery.data.schema.project_type)}
           </p>
-          <h1>Customer questionnaire</h1>
+          <h1>Анкета заказчика</h1>
           <p className="page-heading__description">
-            {projectTypeLabel(questionnaireQuery.data.schema.project_type)} · version{' '}
+            {projectTypeLabel(questionnaireQuery.data.schema.project_type)} · версия{' '}
             {questionnaireQuery.data.schema.version}
           </p>
         </div>
@@ -417,15 +466,15 @@ export function QuestionnairePage() {
       {submission ? (
         <p className="questionnaire-status" role="status">
           {submission.status === 'submitted'
-            ? 'Submitted questionnaire'
+            ? 'Отправленная анкета'
             : submission.supersedes_id
-              ? 'Correction draft'
+              ? 'Черновик исправлений'
               : submission.status === 'correction_requested'
-                ? 'Correction requested'
-                : 'Draft questionnaire'}
+                ? 'Запрошены исправления'
+                : 'Черновик анкеты'}
         </p>
       ) : (
-        <p className="questionnaire-empty">No draft has been started yet.</p>
+        <p className="questionnaire-empty">Черновик ещё не создан.</p>
       )}
 
       {canStart && (
@@ -442,10 +491,10 @@ export function QuestionnairePage() {
             type="button"
           >
             {startDraft.isPending
-              ? 'Starting...'
+              ? 'Начало...'
               : startDraft.isError
-                ? 'Try again'
-                : 'Start questionnaire'}
+                ? 'Попробовать снова'
+                : 'Заполнить анкету'}
           </button>
         </section>
       )}
@@ -453,18 +502,18 @@ export function QuestionnairePage() {
       {submission && canEdit && (
         <form className="project-panel questionnaire-panel" onSubmit={save} noValidate>
           <p className="questionnaire-help">
-            Your draft is saved separately from the project passport. You can return to it later.
+            Черновик сохраняется отдельно от паспорта проекта. К нему можно вернуться позже.
           </p>
           {visibleQuestions.map(renderQuestion)}
           {saveDraft.error && (
             <p className="form-error" role="alert">
               {saveDraft.error.message ||
-                "We couldn't save this draft. Your answers are still here."}
+                'Не удалось сохранить черновик. Ваши ответы сохранены на странице.'}
             </p>
           )}
           {saveDraft.isSuccess && (
             <p className="success-message" role="status">
-              Draft saved.
+              Черновик сохранён.
             </p>
           )}
           {unconfirmedPrefills && (
@@ -474,15 +523,15 @@ export function QuestionnairePage() {
                 onChange={(event) => setConfirmPrefilled(event.currentTarget.checked)}
                 type="checkbox"
               />
-              <span>I reviewed and confirm the answers prefilled from the passport.</span>
+              <span>Я проверил и подтверждаю ответы, заполненные из паспорта.</span>
             </label>
           )}
           {submitSubmission.error && (
             <div className="form-error" role="alert">
               <p>
                 {stalePassportVersionError
-                  ? 'The project passport changed after this draft started. Your draft is safe; refresh its version, review your answers, and submit again.'
-                  : submitSubmission.error.message || "We couldn't submit this questionnaire."}
+                  ? 'Паспорт проекта изменился после создания черновика. Обновите версию, проверьте ответы и отправьте их снова.'
+                  : submitSubmission.error.message || 'Не удалось отправить анкету.'}
               </p>
               {stalePassportVersionError && (
                 <button
@@ -494,19 +543,19 @@ export function QuestionnairePage() {
                   }}
                   type="button"
                 >
-                  {refreshDraftVersion.isPending ? 'Refreshing...' : 'Refresh draft version'}
+                  {refreshDraftVersion.isPending ? 'Обновление...' : 'Обновить версию черновика'}
                 </button>
               )}
             </div>
           )}
           {refreshDraftVersion.error && (
             <p className="form-error" role="alert">
-              {refreshDraftVersion.error.message || "We couldn't refresh this draft."}
+              {refreshDraftVersion.error.message || 'Не удалось обновить черновик.'}
             </p>
           )}
           {refreshDraftVersion.isSuccess && (
             <p className="success-message" role="status">
-              Draft version refreshed. Review your answers and submit again.
+              Версия черновика обновлена. Проверьте ответы и отправьте их снова.
             </p>
           )}
           {submitFieldErrors.confirm_prefilled?.length ? (
@@ -522,7 +571,7 @@ export function QuestionnairePage() {
                 onClick={() => save()}
                 type="button"
               >
-                Try save again
+                Повторить сохранение
               </button>
             )}
             <button
@@ -530,7 +579,7 @@ export function QuestionnairePage() {
               disabled={saveDraft.isPending || editedKeys.size === 0}
               type="submit"
             >
-              {saveDraft.isPending ? 'Saving...' : 'Save draft'}
+              {saveDraft.isPending ? 'Сохранение...' : 'Сохранить черновик'}
             </button>
             <button
               className="button button--primary"
@@ -538,7 +587,7 @@ export function QuestionnairePage() {
               onClick={() => void submit()}
               type="button"
             >
-              {submitSubmission.isPending ? 'Submitting...' : 'Submit answers'}
+              {submitSubmission.isPending ? 'Отправка...' : 'Отправить ответы'}
             </button>
           </div>
         </form>
@@ -548,22 +597,43 @@ export function QuestionnairePage() {
         <section className="project-panel questionnaire-panel">
           <p>
             {submission.status === 'submitted'
-              ? 'Submitted. Answers are locked.'
+              ? 'Ответы отправлены и заблокированы для изменений.'
               : isCustomer
-                ? 'This project is read-only. The questionnaire is available for viewing.'
+                ? 'Проект доступен только для чтения. Анкету можно просмотреть.'
                 : submission.supersedes_id
-                  ? 'The customer can edit this correction draft.'
-                  : 'The customer can edit this questionnaire draft.'}
+                  ? 'Заказчик может редактировать этот черновик исправлений.'
+                  : 'Заказчик может редактировать этот черновик анкеты.'}
           </p>
           <dl className="questionnaire-summary">
             {submission.answers.map((answer) => (
               <div key={answer.question_key}>
                 <dt>
-                  {questions.find((question) => question.key === answer.question_key)?.label ??
-                    answer.question_key}
+                  {questionnaireQuestionLabel(
+                    schema?.schema_key ?? '',
+                    schema?.version ?? 0,
+                    answer.question_key,
+                    questions.find((question) => question.key === answer.question_key)?.label ??
+                      answer.question_key,
+                  )}
                 </dt>
                 <dd>
-                  {Array.isArray(answer.value) ? answer.value.join(', ') : String(answer.value)}
+                  {typeof answer.value === 'boolean'
+                    ? answer.value
+                      ? 'Да'
+                      : 'Нет'
+                    : typeof answer.value === 'string' &&
+                        questions.find((question) => question.key === answer.question_key)?.type ===
+                          'select'
+                      ? questionnaireOptionLabel(
+                          schema?.schema_key ?? '',
+                          schema?.version ?? 0,
+                          answer.question_key,
+                          answer.value,
+                          answer.value,
+                        )
+                      : Array.isArray(answer.value)
+                        ? answer.value.join(', ')
+                        : String(answer.value)}
                 </dd>
               </div>
             ))}
@@ -579,7 +649,7 @@ export function QuestionnairePage() {
                 )}
                 {requestCorrection.isSuccess && (
                   <p className="success-message" role="status">
-                    Correction draft requested.
+                    Запрошен черновик исправлений.
                   </p>
                 )}
                 <button
@@ -588,7 +658,7 @@ export function QuestionnairePage() {
                   onClick={() => requestCorrection.mutate()}
                   type="button"
                 >
-                  {requestCorrection.isPending ? 'Requesting...' : 'Request correction'}
+                  {requestCorrection.isPending ? 'Отправка запроса...' : 'Запросить исправления'}
                 </button>
               </div>
             )}
@@ -600,18 +670,18 @@ export function QuestionnairePage() {
           className="project-panel questionnaire-panel"
           aria-labelledby="questionnaire-history-title"
         >
-          <h2 id="questionnaire-history-title">Questionnaire history</h2>
+          <h2 id="questionnaire-history-title">История анкеты</h2>
           <ol className="questionnaire-history">
             {questionnaireQuery.data.history.map((version) => (
               <li key={version.id}>
                 <span>
                   {version.status === 'correction_requested'
-                    ? 'Correction requested'
+                    ? 'Запрошены исправления'
                     : version.status === 'submitted'
-                      ? 'Submitted'
+                      ? 'Отправлена'
                       : version.supersedes_id
-                        ? 'Correction draft'
-                        : 'Draft'}
+                        ? 'Черновик исправлений'
+                        : 'Черновик'}
                 </span>
                 <time dateTime={version.started_at}>
                   {new Date(version.started_at).toLocaleDateString()}
@@ -627,8 +697,10 @@ export function QuestionnairePage() {
           className="project-panel questionnaire-panel"
           aria-labelledby="questionnaire-conflicts-title"
         >
-          <h2 id="questionnaire-conflicts-title">Questionnaire conflicts</h2>
-          {conflictsQuery.isPending && <p className="questionnaire-help">Loading conflicts...</p>}
+          <h2 id="questionnaire-conflicts-title">Противоречия в анкете</h2>
+          {conflictsQuery.isPending && (
+            <p className="questionnaire-help">Загрузка противоречий...</p>
+          )}
           {conflictsQuery.isError && (
             <div className="form-error" role="alert">
               <p>{conflictsQuery.error.message}</p>
@@ -637,7 +709,7 @@ export function QuestionnairePage() {
                 onClick={() => void conflictsQuery.refetch()}
                 type="button"
               >
-                Try again
+                Попробовать снова
               </button>
             </div>
           )}
@@ -651,24 +723,24 @@ export function QuestionnairePage() {
                 }
                 type="button"
               >
-                Refresh passport and conflicts
+                Обновить паспорт и противоречия
               </button>
             </div>
           )}
           {!conflictsQuery.isPending && !conflictsQuery.isError && !conflictsQuery.data?.length && (
-            <p className="questionnaire-empty">No unresolved questionnaire conflicts.</p>
+            <p className="questionnaire-empty">Неразрешённых противоречий в анкете нет.</p>
           )}
           {conflictsQuery.data?.map((conflict) => (
             <article className="questionnaire-conflict" key={conflict.id}>
               <h3>{conflictFieldLabel(conflict)}</h3>
               <dl className="questionnaire-summary">
                 <div>
-                  <dt>Current passport value</dt>
-                  <dd>{displayValue(conflict.passport_value)}</dd>
+                  <dt>Текущее значение в паспорте</dt>
+                  <dd>{displayConflictValue(conflict.passport_value, conflict.question_key)}</dd>
                 </div>
                 <div>
-                  <dt>Customer answer</dt>
-                  <dd>{displayValue(conflict.answer_value)}</dd>
+                  <dt>Ответ заказчика</dt>
+                  <dd>{displayConflictValue(conflict.answer_value, conflict.question_key)}</dd>
                 </div>
               </dl>
               <div className="form-actions">
@@ -678,7 +750,7 @@ export function QuestionnairePage() {
                   onClick={() => resolve(conflict, 'keep_passport')}
                   type="button"
                 >
-                  Keep passport value
+                  Оставить значение паспорта
                 </button>
                 <button
                   className="button button--primary"
@@ -686,7 +758,7 @@ export function QuestionnairePage() {
                   onClick={() => resolve(conflict, 'apply_answer')}
                   type="button"
                 >
-                  Apply questionnaire answer
+                  Применить ответ анкеты
                 </button>
               </div>
             </article>
@@ -695,14 +767,10 @@ export function QuestionnairePage() {
       )}
 
       {isCustomer && !canStart && !submission && (
-        <p className="state-message">
-          A questionnaire draft can be started when the project is active.
-        </p>
+        <p className="state-message">Анкету можно начать заполнять, когда проект активен.</p>
       )}
       {!isCustomer && !submission && (
-        <p className="questionnaire-empty">
-          The customer has not started a questionnaire draft yet.
-        </p>
+        <p className="questionnaire-empty">Заказчик ещё не начал заполнять анкету.</p>
       )}
     </main>
   );

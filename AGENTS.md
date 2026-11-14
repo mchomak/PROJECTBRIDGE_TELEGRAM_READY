@@ -77,6 +77,11 @@ technical document and add or amend an ADR.
 
 ## 4. Think before coding
 
+For frontend work, use the project-local skills in `.agents/skills/`:
+`frontend-design` for design decisions, `web-design-guidelines` for UI
+quality audits, and `webapp-testing` for Playwright browser verification.
+Review their instructions and any scripts before use.
+
 - State assumptions when they affect implementation.
 - Surface trade-offs when multiple interpretations exist.
 - Prefer the simplest solution that satisfies the task.

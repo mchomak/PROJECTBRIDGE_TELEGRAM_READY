@@ -33,9 +33,9 @@ export function VerifyEmailPage() {
     return (
       <main className="auth-page">
         <section className="auth-card" aria-labelledby="verification-success-title">
-          <h1 id="verification-success-title">Email confirmed</h1>
-          <p>Your email address is verified. Log in to continue.</p>
-          <Link to="/login">Log in</Link>
+          <h1 id="verification-success-title">Адрес электронной почты подтверждён</h1>
+          <p>Адрес подтверждён. Войдите, чтобы продолжить.</p>
+          <Link to="/login">Войти</Link>
         </section>
       </main>
     );
@@ -45,11 +45,11 @@ export function VerifyEmailPage() {
     return (
       <main className="auth-page">
         <section className="auth-card" aria-labelledby="verification-error-title">
-          <h1 id="verification-error-title">We couldn’t confirm this email</h1>
+          <h1 id="verification-error-title">Не удалось подтвердить адрес</h1>
           <p role="alert">
-            {confirm.error?.message ?? 'This verification link is missing its token.'}
+            {confirm.error?.message ?? 'В ссылке подтверждения отсутствует токен.'}
           </p>
-          <Link to="/verification-required">Request another verification email</Link>
+          <Link to="/verification-required">Запросить новое письмо</Link>
         </section>
       </main>
     );
@@ -58,8 +58,8 @@ export function VerifyEmailPage() {
   return (
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="verification-pending-title">
-        <h1 id="verification-pending-title">Confirming your email…</h1>
-        <p role="status">Please wait while we verify your address.</p>
+        <h1 id="verification-pending-title">Подтверждаем адрес…</h1>
+        <p role="status">Подождите, пока мы проверяем адрес.</p>
       </section>
     </main>
   );

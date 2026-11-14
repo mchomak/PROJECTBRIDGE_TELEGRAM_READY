@@ -201,13 +201,13 @@ test('executor can add a stage with a due date and sees its status', async () =>
   renderPage(fetchMock, executor);
 
   expect(await screen.findByRole('heading', { name: 'Discovery' })).toBeTruthy();
-  expect(screen.getByText(/Due 2026-12-01/)).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Edit stage' })).toBeTruthy();
+  expect(screen.getByText(/Срок: 2026-12-01/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Изменить этап' })).toBeTruthy();
   expect(screen.queryByText(/percentage|gantt/i)).toBeNull();
 
-  fireEvent.click(screen.getByText('Add stage'));
-  fireEvent.change(screen.getByLabelText('Stage name'), { target: { value: 'Build' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Create stage' }));
+  fireEvent.click(screen.getByText('Добавить этап'));
+  fireEvent.change(screen.getByLabelText('Название этапа'), { target: { value: 'Build' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Создать этап' }));
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
@@ -223,11 +223,11 @@ test('customer reads shared Project State without create or edit controls', asyn
   renderPage(fetchMock, customer);
 
   expect(await screen.findByRole('heading', { name: 'Discovery' })).toBeTruthy();
-  expect(screen.getByText('planned')).toBeTruthy();
-  expect(screen.getByText(/Due 2026-12-01/)).toBeTruthy();
-  expect(screen.getByText('The executor has not added any requirements yet.')).toBeTruthy();
-  expect(screen.queryByText('Add stage')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Edit stage' })).toBeNull();
+  expect(screen.getByText('Запланирован')).toBeTruthy();
+  expect(screen.getByText(/Срок: 2026-12-01/)).toBeTruthy();
+  expect(screen.getByText('Исполнитель ещё не добавил требования.')).toBeTruthy();
+  expect(screen.queryByText('Добавить этап')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Изменить этап' })).toBeNull();
   expect(fetchMock).not.toHaveBeenCalledWith(
     expect.stringContaining('/evidence-options/'),
     expect.anything(),
@@ -238,7 +238,7 @@ test('customer sees a clear empty state when no shared state has been added', as
   const fetchMock = stateFetch(customerId, { stages: [], conflicts: [] });
   renderPage(fetchMock, customer);
 
-  expect(await screen.findByText('The executor has not added any stages yet.')).toBeTruthy();
+  expect(await screen.findByText('Исполнитель ещё не добавил этапы.')).toBeTruthy();
   expect(screen.queryByText(/percentage|gantt/i)).toBeNull();
   expect(screen.queryByText('Add the first stages to the shared project plan.')).toBeNull();
 });
@@ -257,10 +257,10 @@ test('customer can retry after a Project State load error', async () => {
   renderPage(fetchMock, customer);
 
   expect(
-    await screen.findByRole('heading', { name: 'We couldn’t load Project State' }),
+    await screen.findByRole('heading', { name: 'Не удалось загрузить состояние проекта' }),
   ).toBeTruthy();
-  expect(screen.getByText('Try again later.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(screen.getByText('Не удалось выполнить запрос. Попробуйте ещё раз.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }));
 
   await waitFor(() => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url) === stateUrl).length).toBeGreaterThan(
@@ -268,9 +268,9 @@ test('customer can retry after a Project State load error', async () => {
     );
   });
   expect(
-    await screen.findByRole('heading', { name: 'We couldn’t load Project State' }),
+    await screen.findByRole('heading', { name: 'Не удалось загрузить состояние проекта' }),
   ).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Попробовать снова' })).toBeTruthy();
 });
 
 test('executor can edit terminal stage content without a status control', async () => {
@@ -282,16 +282,16 @@ test('executor can edit terminal stage content without a status control', async 
   renderPage(fetchMock, executor);
 
   expect(await screen.findByRole('heading', { name: 'Completed stage' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Edit stage' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Изменить этап' }));
 
   const stageCard = screen.getByRole('heading', { name: 'Completed stage' }).closest('article');
   if (!stageCard) throw new Error('The completed stage card was not rendered.');
-  expect(screen.getByText('Status: completed')).toBeTruthy();
+  expect(screen.getByText('Статус: Завершён')).toBeTruthy();
   expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull();
-  fireEvent.change(within(stageCard).getByLabelText('Stage name'), {
+  fireEvent.change(within(stageCard).getByLabelText('Название этапа'), {
     target: { value: 'Updated completed stage' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Save stage' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить этап' }));
 
   await waitFor(() => {
     const patchCall = fetchMock.mock.calls.find(
@@ -327,10 +327,10 @@ test.each(['resolved', 'dismissed'] as const)(
         name: `${status === 'resolved' ? 'Resolved' : 'Dismissed'} conflict`,
       }),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Edit conflict' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Resolve conflict' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Изменить противоречие' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Разрешить противоречие' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Status' })).toBeNull();
-    expect(screen.queryByLabelText('Resolution')).toBeNull();
+    expect(screen.queryByLabelText('Решение')).toBeNull();
     expect(
       fetchMock.mock.calls.some(
         ([url, init]) =>

@@ -4,10 +4,10 @@ import { getApiFieldErrors } from '../../../shared/api';
 import { useCreateProjectInvitation, useRevokeProjectInvitation } from '../model/mutations';
 
 const invitationStatusLabels: Record<InvitationStatus, string> = {
-  pending: 'Pending',
-  expired: 'Expired',
-  accepted: 'Accepted',
-  revoked: 'Revoked',
+  pending: 'Ожидает ответа',
+  expired: 'Истекло',
+  accepted: 'Принято',
+  revoked: 'Отозвано',
 };
 
 function formatDate(value: string): string {
@@ -45,7 +45,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
       {
         onSuccess: (invitation) => {
           setInvitedEmail('');
-          setStatusMessage(`Invitation sent to ${invitation.invited_email}.`);
+          setStatusMessage(`Приглашение отправлено на ${invitation.invited_email}.`);
         },
       },
     );
@@ -54,7 +54,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
   function revoke(invitationId: string, email: string) {
     setStatusMessage(null);
     revokeInvitation.mutate(invitationId, {
-      onSuccess: () => setStatusMessage(`Invitation to ${email} revoked.`),
+      onSuccess: () => setStatusMessage(`Приглашение для ${email} отозвано.`),
     });
   }
 
@@ -62,9 +62,9 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
     <section className="project-panel invitation-panel" aria-labelledby="invitations-title">
       <div className="section-heading">
         <div>
-          <h2 id="invitations-title">Project invitations</h2>
+          <h2 id="invitations-title">Приглашения в проект</h2>
           <p className="section-heading__description">
-            Invite one customer by email and track the invitation here.
+            Пригласите заказчика по электронной почте и следите за статусом приглашения.
           </p>
         </div>
       </div>
@@ -72,7 +72,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
       {canManage ? (
         <form className="invitation-form" onSubmit={submitInvitation}>
           <div className="form-field">
-            <label htmlFor="invitation-email">Customer email</label>
+            <label htmlFor="invitation-email">Почта заказчика</label>
             <input
               aria-describedby={emailError ? 'invitation-email-error' : undefined}
               aria-invalid={Boolean(emailError)}
@@ -95,18 +95,19 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
               disabled={createInvitation.isPending}
               type="submit"
             >
-              {createInvitation.isPending ? 'Sending…' : 'Send invitation'}
+              {createInvitation.isPending ? 'Отправка…' : 'Отправить приглашение'}
             </button>
           </div>
           {createInvitation.isError && !emailError && (
             <p className="form-error" role="alert">
-              {createInvitation.error.message || 'The invitation could not be sent. Try again.'}
+              {createInvitation.error.message ||
+                'Не удалось отправить приглашение. Попробуйте снова.'}
             </p>
           )}
         </form>
       ) : (
         <p className="field-help invitation-readonly-note">
-          Invitations can be changed while the project is Draft or Active.
+          Приглашения можно изменять, пока проект находится в черновике или активен.
         </p>
       )}
 
@@ -117,34 +118,34 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
       )}
       {revokeInvitation.isError && (
         <p className="form-error" role="alert">
-          {revokeInvitation.error.message || 'The invitation could not be revoked. Try again.'}
+          {revokeInvitation.error.message || 'Не удалось отозвать приглашение. Попробуйте снова.'}
         </p>
       )}
 
       {invitationsQuery.isPending ? (
         <p className="state-message invitation-loading" role="status">
-          Loading invitations…
+          Загрузка приглашений…
         </p>
       ) : invitationsQuery.isError ? (
         <div className="state-message state-message--error invitation-list-error" role="alert">
-          <p>{invitationsQuery.error.message || 'We couldn’t load project invitations.'}</p>
+          <p>{invitationsQuery.error.message || 'Не удалось загрузить приглашения проекта.'}</p>
           <button
             className="button button--secondary"
             disabled={invitationsQuery.isFetching}
             onClick={() => void invitationsQuery.refetch()}
             type="button"
           >
-            {invitationsQuery.isFetching ? 'Loading…' : 'Try again'}
+            {invitationsQuery.isFetching ? 'Загрузка…' : 'Попробовать снова'}
           </button>
         </div>
       ) : invitationsQuery.data?.results.length ? (
-        <ul className="invitation-list" aria-label="Invitation status list">
+        <ul className="invitation-list" aria-label="Список приглашений">
           {invitationsQuery.data.results.map((invitation) => (
             <li className="invitation-row" key={invitation.id}>
               <div className="invitation-row__main">
                 <span className="invitation-row__email">{invitation.invited_email}</span>
                 <span className="invitation-row__meta">
-                  Expires {formatDate(invitation.expires_at)}
+                  Действует до {formatDate(invitation.expires_at)}
                 </span>
               </div>
               <div className="invitation-row__actions">
@@ -158,7 +159,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
                     onClick={() => revoke(invitation.id, invitation.invited_email)}
                     type="button"
                   >
-                    Revoke invitation to {invitation.invited_email}
+                    Отозвать приглашение для {invitation.invited_email}
                   </button>
                 )}
               </div>
@@ -167,12 +168,12 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
         </ul>
       ) : (
         <div className="empty-state invitation-empty-state">
-          <h3>No invitations yet</h3>
-          <p>Invitations you send will show their status here.</p>
+          <h3>Приглашений пока нет</h3>
+          <p>Здесь появятся отправленные приглашения и их статусы.</p>
         </div>
       )}
       {invitationsQuery.data && (invitationsQuery.data.previous || invitationsQuery.data.next) && (
-        <nav className="pagination" aria-label="Invitation pages">
+        <nav className="pagination" aria-label="Страницы приглашений">
           <div className="pagination__actions">
             <button
               className="button button--secondary"
@@ -180,7 +181,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
               onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
               type="button"
             >
-              Previous invitations
+              Предыдущие приглашения
             </button>
             <button
               className="button button--secondary"
@@ -188,7 +189,7 @@ export function InvitationManager({ projectId, canManage }: InvitationManagerPro
               onClick={() => setPage((currentPage) => currentPage + 1)}
               type="button"
             >
-              Next invitations
+              Следующие приглашения
             </button>
           </div>
         </nav>

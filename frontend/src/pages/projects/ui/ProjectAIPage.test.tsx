@@ -224,25 +224,30 @@ test('executor sees analysis history and evidence, then can accept, edit, reject
   const fetchMock = workspaceFetch();
   renderPage(fetchMock, executor);
 
-  expect(await screen.findByRole('heading', { name: 'AI analysis and proposals' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Analysis history' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Proposal inbox' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Анализ и предложения ИИ' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'История анализов' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Предложения на проверку' })).toBeTruthy();
   expect(
     await screen.findAllByText('The workspace must retain a record of important changes.'),
   ).toHaveLength(3);
   expect(screen.getAllByText('55555555-5555-4555-8555-555555555555')).toHaveLength(3);
 
   const acceptCard = screen.getByRole('article', { name: 'Add audit history' });
-  fireEvent.click(within(acceptCard).getByRole('button', { name: 'Accept and apply' }));
-  await waitFor(() => expect(within(acceptCard).getByText('applied')).toBeTruthy());
+  fireEvent.click(within(acceptCard).getByRole('button', { name: 'Принять и применить' }));
+  await waitFor(() => expect(within(acceptCard).getByText('Применено')).toBeTruthy());
 
   const editCard = screen.getByRole('article', { name: 'Confirm retention period' });
-  fireEvent.click(within(editCard).getByRole('button', { name: 'Edit first' }));
-  fireEvent.change(within(editCard).getByLabelText('Edit proposed Project State data'), {
-    target: { value: '{"question":"Use a 90 day retention period?"}' },
-  });
-  fireEvent.click(within(editCard).getByRole('button', { name: 'Apply edited proposal' }));
-  await waitFor(() => expect(within(editCard).getByText('applied')).toBeTruthy());
+  fireEvent.click(within(editCard).getByRole('button', { name: 'Сначала изменить' }));
+  fireEvent.change(
+    within(editCard).getByLabelText('Изменить предложенные данные состояния проекта'),
+    {
+      target: { value: '{"question":"Use a 90 day retention period?"}' },
+    },
+  );
+  fireEvent.click(
+    within(editCard).getByRole('button', { name: 'Применить изменённое предложение' }),
+  );
+  await waitFor(() => expect(within(editCard).getByText('Применено')).toBeTruthy());
   const editedCall = fetchMock.mock.calls.find(
     ([input, init]) =>
       String(input) === `/api/v1/ai/proposals/${proposalIds[1]}/apply-edited/` &&
@@ -255,10 +260,10 @@ test('executor sees analysis history and evidence, then can accept, edit, reject
 
   const rejectCard = screen.getByRole('article', { name: 'Support exports' });
   fireEvent.click(within(rejectCard).getByRole('button', { name: 'Reject' }));
-  await waitFor(() => expect(within(rejectCard).getByText('rejected')).toBeTruthy());
+  await waitFor(() => expect(within(rejectCard).getByText('Отклонено')).toBeTruthy());
 
-  fireEvent.click(screen.getByRole('button', { name: 'Analyze project' }));
-  await screen.findByText('Waiting to start');
+  fireEvent.click(screen.getByRole('button', { name: 'Анализировать проект' }));
+  await screen.findByText('Ожидает запуска');
   const analysisCall = fetchMock.mock.calls.find(
     ([input, init]) =>
       String(input) === `/api/v1/projects/${projectId}/ai/analyses/` && init?.method === 'POST',
@@ -278,8 +283,8 @@ test('proposal inbox refreshes when a polled analysis request succeeds', async (
   const fetchMock = workspaceFetch({ completeWithNewProposal: true });
   renderPage(fetchMock, executor);
 
-  expect(await screen.findByRole('heading', { name: 'AI analysis and proposals' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Analyze project' }));
+  expect(await screen.findByRole('heading', { name: 'Анализ и предложения ИИ' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Анализировать проект' }));
 
   expect(
     await screen.findByRole('article', { name: 'Create export audit bundle' }, { timeout: 9_000 }),
@@ -302,16 +307,15 @@ test.each(['queue_unavailable', 'worker_backlog'])(
     });
     renderPage(fetchMock, executor);
 
-    expect(await screen.findByRole('heading', { name: 'AI analysis and proposals' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Analyze project' }));
+    expect(await screen.findByRole('heading', { name: 'Анализ и предложения ИИ' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Анализировать проект' }));
 
-    const warning =
-      'This analysis is waiting for processing. The system will keep retrying; it has not started yet.';
+    const warning = 'Анализ ожидает обработки. Система продолжит попытки запуска.';
     expect(await screen.findByText(warning, {}, { timeout: 6_000 })).toBeTruthy();
     await waitFor(
       () => {
         expect(screen.queryByText(warning)).toBeNull();
-        expect(screen.getByRole('button', { name: 'Analysis in progress' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Идёт анализ' })).toBeTruthy();
       },
       { timeout: 6_000 },
     );
@@ -326,8 +330,8 @@ test('proposal inbox refreshes when the first poll already reports success', asy
   });
   renderPage(fetchMock, executor);
 
-  expect(await screen.findByRole('heading', { name: 'AI analysis and proposals' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Analyze project' }));
+  expect(await screen.findByRole('heading', { name: 'Анализ и предложения ИИ' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Анализировать проект' }));
 
   expect(
     await screen.findByRole('article', { name: 'Create export audit bundle' }, { timeout: 3_000 }),
