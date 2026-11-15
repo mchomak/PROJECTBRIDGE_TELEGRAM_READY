@@ -18,6 +18,14 @@ PROVIDER_CAPABILITIES = {
             }
         )
     ),
+    "deepseek": ProviderCapabilities(
+        capabilities=frozenset(
+            {
+                AICapability.TEXT_GENERATION,
+                AICapability.RERANKING,
+            }
+        )
+    ),
 }
 
 

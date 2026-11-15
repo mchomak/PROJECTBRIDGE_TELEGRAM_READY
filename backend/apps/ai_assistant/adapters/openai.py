@@ -34,11 +34,21 @@ class ProviderCallError(Exception):
         super().__init__(code)
 
 
-def _client(timeout_seconds: int):
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+def _client(provider_key: str, timeout_seconds: int):
+    if provider_key == "deepseek":
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        base_url = os.environ.get(
+            "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+        ).strip()
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        base_url = None
     if not api_key:
         raise ProviderCallError("provider_credentials_missing")
-    return OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=0)
+    client_options = {"api_key": api_key, "timeout": timeout_seconds, "max_retries": 0}
+    if base_url:
+        client_options["base_url"] = base_url
+    return OpenAI(**client_options)
 
 
 def _normalize_error(error):
@@ -64,7 +74,8 @@ def _normalize_error(error):
 
 
 class OpenAIAdapter:
-    provider_key = "openai"
+    """OpenAI API adapter, also used for DeepSeek's compatible Responses API."""
+
     capabilities = frozenset(
         {
             AICapability.TEXT_GENERATION,
@@ -121,7 +132,10 @@ class OpenAIAdapter:
     def generate(self, *, profile, request):
         response_usage = None
         try:
-            client = _client(int(profile.parameters.get("timeout_seconds", 30)))
+            client = _client(
+                getattr(profile, "provider_key", "openai"),
+                int(profile.parameters.get("timeout_seconds", 30)),
+            )
             max_output_tokens = int(profile.parameters.get("max_output_tokens", 1024))
             kwargs = {
                 "model": profile.model_name,
@@ -173,7 +187,10 @@ class OpenAIAdapter:
             raise ProviderCallError("embedding_batch_invalid")
         response_usage = None
         try:
-            client = _client(int(profile.parameters.get("timeout_seconds", 30)))
+            client = _client(
+                getattr(profile, "provider_key", "openai"),
+                int(profile.parameters.get("timeout_seconds", 30)),
+            )
             response = client.embeddings.create(
                 model=profile.model_name,
                 input=texts,
@@ -223,7 +240,10 @@ class OpenAIAdapter:
         )
         response_usage = None
         try:
-            client = _client(int(profile.parameters.get("timeout_seconds", 45)))
+            client = _client(
+                getattr(profile, "provider_key", "openai"),
+                int(profile.parameters.get("timeout_seconds", 45)),
+            )
             response = client.responses.create(
                 model=profile.model_name,
                 instructions=(

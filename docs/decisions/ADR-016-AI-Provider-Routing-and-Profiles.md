@@ -1,7 +1,7 @@
 # ADR-016: AI Provider Routing and Task Profiles
 
 **Status:** Accepted for the local MVP
-**Date:** 2026-11-13
+**Date:** 2026-11-13; provider selection updated 2026-11-15
 
 ## Context
 
@@ -12,34 +12,36 @@ decisions were open before Stage 10.
 
 ## Decision
 
-Use the official OpenAI Python SDK (`openai==3.49.0`) behind an adapter
+Use the official OpenAI Python SDK (`openai==3.49.0`) behind adapters
 inside `apps.ai_assistant`. Domain code calls typed router operations by
 task key. OpenAI calls use the Responses API for text generation and the
-Embeddings API for vectors.
+Embeddings API for vectors. DeepSeek uses the SDK against its compatible
+Responses API for text generation and reranking.
 
 Seed these independent profiles:
 
 | Task | Default profile | Compatible fallback |
 |---|---|---|
-| `message_analysis` | `gpt-6-luna` | `gpt-6.1-sol` |
-| `conversation_analysis` | `gpt-6.1-sol` | `gpt-6-luna` |
-| `contradiction_detection` | `gpt-6.1-sol` | `gpt-6-luna` |
+| `message_analysis` | `deepseek-flash` | none |
+| `conversation_analysis` | `deepseek-flash` | none |
+| `contradiction_detection` | `deepseek-flash` | none |
 | `document_embedding` | `text-embedding-3-small`, 1536 dimensions | none |
-| `rag_reranking` | `gpt-6.1-sol` | `gpt-6-luna` |
-| `specification_generation` | `gpt-6.1-sol` | `gpt-6-luna` |
+| `rag_reranking` | `deepseek-flash` | none |
+| `specification_generation` | `deepseek-flash` | none |
 
-The official model pages list both selected text models as supporting the
-Responses endpoint and structured outputs. They recommend GPT-6 Luna for
-cost-sensitive, high-volume work and GPT-6.1 Sol for complex work. The
-catalog pages also list GPT-4.1 and GPT-4.1 mini as deprecated with a
-2027-01-14 shutdown date, so they are not seeded. Current API model access
-is account-specific; unavailable or unauthorized models return a
-normalized error.
+DeepSeek Flash supports the Responses API and JSON Schema output required
+for the current generation and reranking contracts. It is selected as a
+low-cost local integration model; quality is not the current test objective.
+Its published peak rates are used in profile estimates: USD 0.30 per million
+input tokens and USD 1.20 per million output tokens. The local profiles do
+not configure a fallback; transient errors receive the router's one bounded
+retry. OpenAI remains configured for embeddings only.
 
 Profiles are configured in the backend-only Django Admin. `OPENAI_API_KEY`
-is read from backend/worker environment only and is never stored in a
-profile row. A missing key fails explicitly. No provider API is called in
-tests.
+and `DEEPSEEK_API_KEY` are read from backend/worker environment only and are
+never stored in a profile row. `DEEPSEEK_BASE_URL` defaults to
+`https://api.deepseek.com`. A missing key fails explicitly. No provider API
+is called in tests.
 
 Fallbacks share the task and capability. Text profiles share the typed
 text/optional JSON-schema contract. Embedding fallback is rejected unless
@@ -117,11 +119,12 @@ the atomic document write and reject any change to the returned
   before public onboarding, per `docs/security/ACCESS_CONTROL_AND_SECURITY.md`.
 - Recheck provider availability and rate snapshots when changing profiles.
 
-## Primary sources checked 2026-11-13
+## Primary sources checked 2026-11-13 and 2026-11-15
 
-- [OpenAI GPT-6 Luna model page](https://developers.openai.com/api/docs/models/gpt-6-luna)
-- [OpenAI GPT-6.1 Sol model page](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
-- [OpenAI Structured Outputs guide for Responses](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)
+- [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/)
+- [DeepSeek Responses API](https://api-docs.deepseek.com/api/create-response/)
+- [DeepSeek Responses API guide](https://api-docs.deepseek.com/guides/responses_api/)
+- [DeepSeek JSON Output guide](https://api-docs.deepseek.com/guides/json_mode/)
 - [OpenAI text-embedding-3-small model page](https://developers.openai.com/api/docs/models/text-embedding-3-small)
 - [OpenAI Embeddings API request limits](https://developers.openai.com/api/reference/resources/embeddings/methods/create)
 - [OpenAI text embedding guide](https://developers.openai.com/api/docs/guides/embeddings)

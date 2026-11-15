@@ -77,7 +77,7 @@ def _result_with_attempts(result, attempt_count):
     return replace(result, attempt_count=attempt_count)
 
 
-_ADAPTERS = {"openai": OpenAIAdapter}
+_ADAPTERS = {"openai": OpenAIAdapter, "deepseek": OpenAIAdapter}
 _TASK_CAPABILITIES = {
     AITask.MESSAGE_ANALYSIS: AICapability.TEXT_GENERATION,
     AITask.CONVERSATION_ANALYSIS: AICapability.TEXT_GENERATION,

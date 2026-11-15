@@ -91,20 +91,18 @@ silently.
 
 ## AI and RAG
 
-10. **Providers and models — resolved for Stage 10 on 2026-11-13:**
-    OpenAI is the initial provider. `message_analysis` uses
-    `gpt-6-luna` with `gpt-6.1-sol` fallback;
-    `conversation_analysis`, `contradiction_detection`, and
-    `specification_generation` use `gpt-6.1-sol` with `gpt-6-luna`
-    fallback; `document_embedding` uses `text-embedding-3-small` at 1536
-    dimensions; `rag_reranking` uses strict structured scoring with
-    `gpt-6.1-sol` and `gpt-6-luna` fallback. Credentials remain in
-    `OPENAI_API_KEY`; a model denied or unavailable to an account returns
-    a normalized provider error. Model identifiers and Responses API
-    structured-output support were checked against the official [GPT-6
-    Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and
-    [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
-    catalogs on 2026-11-13. See ADR-016.
+10. **Providers and models — resolved for local integration on
+    2026-11-15:** DeepSeek `deepseek-flash` handles
+    `message_analysis`, `conversation_analysis`, `contradiction_detection`,
+    `rag_reranking`, and `specification_generation` without automatic
+    fallback. `document_embedding` remains on OpenAI
+    `text-embedding-3-small` at 1536 dimensions. Credentials use
+    `DEEPSEEK_API_KEY` and `OPENAI_API_KEY`; DeepSeek's endpoint defaults to
+    `https://api.deepseek.com`. The DeepSeek Responses API and JSON Schema
+    output, and current model pricing, were checked against the official
+    [API docs](https://api-docs.deepseek.com/api/create-response/) and
+    [models and pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+    Peak DeepSeek rates are used for local cost estimates. See ADR-016.
 11. **Embedding dimension — resolved for Stage 09 on 2026-11-13:** The
     initial `document_embedding` profile uses OpenAI
     `text-embedding-3-small` with 1536 dimensions. Credentials remain

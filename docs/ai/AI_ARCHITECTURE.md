@@ -1,7 +1,7 @@
 # ProjectBridge AI Architecture
 
-**Status:** Router and initial OpenAI model profiles implemented for the local MVP
-**Last updated:** 2026-11-13
+**Status:** Router supports OpenAI and DeepSeek model profiles for the local MVP
+**Last updated:** 2026-11-15
 
 ## 1. Requirements
 
@@ -78,25 +78,26 @@ A profile contains:
 Provider credentials are not stored in the database. They are read from
 environment configuration or a production secret manager.
 
-The initial local profiles use OpenAI. `message_analysis` uses
-`gpt-6-luna` with `gpt-6.1-sol` as a compatible fallback;
-`conversation_analysis`, `contradiction_detection`, and
-`specification_generation` use `gpt-6.1-sol` with `gpt-6-luna` as a
-fallback. `document_embedding` uses `text-embedding-3-small` at 1536
-dimensions. `rag_reranking` uses a strict structured-scoring adapter on
-`gpt-6.1-sol`, with `gpt-6-luna` as fallback. The adapter returns one
-validated score for every candidate; the router orders candidates by
+The local text-generation and reranking profiles use DeepSeek
+`deepseek-flash`, including `message_analysis`, `conversation_analysis`,
+`contradiction_detection`, `rag_reranking`, and
+`specification_generation`. They have no automatic fallback. The model
+supports the OpenAI-compatible Responses API and JSON Schema output used by
+these capabilities. `document_embedding` remains on OpenAI
+`text-embedding-3-small` at 1536 dimensions because DeepSeek does not provide
+an embeddings capability in this integration. The reranking adapter returns
+one validated score for every candidate; the router orders candidates by
 score and rejects missing, duplicate, out-of-range, or non-finite results.
-Profiles and their compatible fallbacks can be changed by backend staff
-in Django Admin.
+Profiles can be changed by backend staff in Django Admin.
 
-The adapter uses the official OpenAI Python SDK and Responses API. A
-missing key, denied model, malformed response, or provider outage is
-returned as a stable error code. The SDK's internal retries are disabled;
-the router makes one bounded retry for transient rate-limit, timeout,
-connection, or server errors, then tries only a capability-compatible
-fallback. Authentication, permission, invalid-request, and missing-model
-errors do not trigger fallback.
+The shared adapter uses the official OpenAI Python SDK. DeepSeek credentials
+are read from `DEEPSEEK_API_KEY` and its endpoint from `DEEPSEEK_BASE_URL`
+(default `https://api.deepseek.com`); OpenAI credentials remain in
+`OPENAI_API_KEY`. A missing key, denied model, malformed response, or provider
+outage is returned as a stable error code. The SDK's internal retries are
+disabled; the router makes one bounded retry for transient rate-limit,
+timeout, connection, or server errors. Authentication, permission,
+invalid-request, and missing-model errors do not trigger fallback.
 
 Default task budgets are editable profile parameters: at most USD 1.00
 reserved per task per UTC day, USD 0.25 per generation/reranking request,
